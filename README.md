@@ -40,6 +40,8 @@ tests/                # C++ 单元测试与 Python HTTP 集成测试
 
 ## 本地开发
 
+当前电脑的项目地址与可直接复制的启动命令见 [本地启动速查](docs/LOCAL.md)。
+
 需要 C++17 编译器、CMake 3.24+、Node.js 22.12+ 和 Python 3（用于 HTTP 集成测试）。Windows 建议安装 Visual Studio 2022 Build Tools 的“使用 C++ 的桌面开发”，在开发者终端执行构建命令。前后端均不依赖 Qt。
 
 ### 1. 安装后端依赖
@@ -126,6 +128,9 @@ npm run build
 
 - [一周分工与验收](docs/PLAN.md)
 - [API 与待实现接口](docs/API.md)
+- [数据库字段中文说明与表关系](docs/DATABASE.md)
+- [业务例子与答辩口径](docs/BUSINESS.md)
+- [本地地址与启动命令](docs/LOCAL.md)
 - [架构、业务规则与扩展点](docs/ARCHITECTURE.md)
 
 不提交数据库文件、账号密码、Token 或本机依赖目录。作业原始 PDF 不在公开仓库中。
