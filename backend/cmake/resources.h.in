@@ -1,0 +1,8 @@
+#pragma once
+
+namespace englishword::resources {
+/// 构建时嵌入迁移脚本，运行时不依赖工作目录。
+inline constexpr const char* schema = R"EW_SCHEMA(@ENGLISHWORD_SCHEMA@)EW_SCHEMA";
+/// 构建时嵌入只读示例词库。
+inline constexpr const char* demoTsv = R"EW_TSV(@ENGLISHWORD_DEMO_TSV@)EW_TSV";
+}

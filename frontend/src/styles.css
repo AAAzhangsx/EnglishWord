@@ -1,0 +1,150 @@
+:root {
+  font-family: Inter, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  color: #253b35;
+  background: #f4f7f5;
+  font-synthesis: none;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+}
+.app-layout {
+  min-height: 100vh;
+}
+.app-layout > .ant-layout-sider {
+  border-right: 1px solid #e5ece8;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 30px 20px 36px;
+  color: #173f34;
+  font-size: 19px;
+  font-weight: 700;
+}
+.brand small {
+  display: block;
+  margin-top: 5px;
+  color: #87998f;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 2px;
+}
+.brand-mark {
+  display: grid;
+  width: 40px;
+  height: 44px;
+  place-items: center;
+  background: #176b57;
+  color: white;
+  border-radius: 13px 13px 13px 3px;
+  font-size: 28px;
+}
+.ant-menu {
+  padding: 0 10px;
+  border-inline-end: 0 !important;
+}
+.ant-menu-item {
+  margin-bottom: 9px !important;
+}
+.sidebar-note {
+  padding: 40px 26px;
+  color: #83958b;
+  font-size: 12px;
+  line-height: 1.9;
+}
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 36px;
+  background: white;
+  border-bottom: 1px solid #e5ece8;
+}
+.app-content {
+  width: 100%;
+  max-width: 1250px;
+  padding: 36px;
+  margin: 0 auto;
+}
+.full-width {
+  width: 100%;
+}
+.hero {
+  padding: 38px;
+  background: linear-gradient(110deg, #e6f1eb, #f9f4e8);
+  border: 1px solid #dce9df;
+  border-radius: 20px;
+}
+.hero h1.ant-typography {
+  margin: 20px 0 16px;
+  color: #173f34;
+  font-size: clamp(26px, 3vw, 38px);
+}
+.hero .ant-typography {
+  color: #60786c;
+}
+.ant-card {
+  box-shadow: 0 3px 18px #1a493507;
+}
+.toolbar {
+  margin-bottom: 24px;
+}
+.word-english {
+  font-size: 17px;
+  letter-spacing: 0.3px;
+}
+.study-card {
+  max-width: 780px;
+}
+.study-card .ant-card-body {
+  padding: 32px;
+}
+.study-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.choice-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  width: 100%;
+}
+.choice-options .ant-radio-wrapper {
+  padding: 14px;
+  border: 1px solid #d8e3dc;
+  border-radius: 10px;
+  margin: 0;
+}
+.answer-feedback {
+  margin-bottom: 20px;
+}
+.task-list {
+  padding-left: 24px;
+  line-height: 2.6;
+}
+@media (max-width: 700px) {
+  .app-header {
+    padding: 0 16px;
+    height: auto;
+    min-height: 64px;
+    flex-wrap: wrap;
+    line-height: 1.8;
+  }
+  .app-content {
+    padding: 24px 16px;
+  }
+  .hero {
+    padding: 24px;
+  }
+  .study-card .ant-card-body {
+    padding: 20px;
+  }
+  .choice-options {
+    grid-template-columns: 1fr;
+  }
+}
