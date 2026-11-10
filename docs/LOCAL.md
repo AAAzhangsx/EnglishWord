@@ -7,7 +7,27 @@
 - GitHub：<https://github.com/yulian-art/EnglishWord>
 - 默认 SQLite：项目下 `build/runtime/englishword.sqlite`，启动后自动创建。
 
-## 当前工作区：WSL 两个终端启动
+## 当前工作区：从 PowerShell 启动（推荐）
+
+如果提示符以 `PS C:\...>` 开头，就在 PowerShell 中直接执行下面两条命令，不要先 `cd /mnt/c/...`。
+
+终端一，启动已经编译好的 WSL 后端：
+
+```powershell
+wsl.exe --cd "C:\Users\11192\Documents\ChatGPT\EnglishWord" --exec bash scripts/start-backend.sh --port 8080
+```
+
+另开一个 PowerShell 终端，启动 WSL 中的 React 开发服务：
+
+```powershell
+wsl.exe --cd "C:\Users\11192\Documents\ChatGPT\EnglishWord\frontend" --exec npm run dev
+```
+
+打开 <http://127.0.0.1:5173>。这两条命令不依赖 PowerShell 当前所在目录，`wsl.exe` 会设置正确的 Linux 工作目录。Ctrl+C 停止相应服务。
+
+PowerShell 中的 `/mnt/c/...` 会被当作当前 Windows 盘符下的路径，例如 `C:\mnt\c\...`，与 WSL 的 `/mnt/c/...` 不是同一位置。单独调用 `bash` 也不会自动纠正错误的工作目录。
+
+## 已进入 WSL 终端时的启动方式
 
 后端已编译，React 依赖已安装。后端脚本会自动加载本地缓存的 Linux 运行库。
 
