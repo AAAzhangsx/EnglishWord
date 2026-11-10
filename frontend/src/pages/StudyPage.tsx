@@ -16,7 +16,7 @@ import {
   Typography,
 } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api, ApiError, type StudyMode, type StudyState } from '../lib/api';
 
 export default function StudyPage({ review = false }: { review?: boolean }) {
@@ -28,12 +28,17 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
   const books = useQuery({ queryKey: ['wordbooks'], queryFn: api.wordbooks });
   const study = useQuery({ queryKey: ['study'], queryFn: api.study, staleTime: 0 });
   const state = study.data;
-  const bookId = selectedBook ?? books.data?.items[0]?.id;
+  const [searchParams] = useSearchParams();
+  const value = Number(searchParams.get('wordbookId'));
+  const urlBookId = Number.isSafeInteger(value) && value > 0 ? value : undefined;
+  const bookId = selectedBook ?? urlBookId ?? books.data?.items[0]?.id;
   const mutation = useMutation({
     mutationFn: (action: () => Promise<StudyState>) => action(),
     onSuccess: (data) => {
       client.setQueryData(['study'], data);
-      setAnswer('');
+      if (!data.result || data.result.correct) {
+        setAnswer('');
+      }
     },
     onError: (error: Error) => {
       void message.error(error.message);
@@ -117,7 +122,14 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
           />
         </Card>
       )}
-
+      {review && state && !state.finished && (
+        <Alert
+        type='info'
+        showIcon
+        title="请先完成当前背诵，再开始错题复习"
+        />
+      )}
+      
       {state && !state.finished && (
         <Card className="study-card">
           <div className="study-meta">
@@ -130,7 +142,7 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
             percent={Math.round((state.currentIndex / state.totalCount) * 100)}
             showInfo={false}
           />
-          <Typography.Paragraph type="secondary">请写出中文对应的英文单词</Typography.Paragraph>
+          <Typography.Paragraph type="secondary">{ state.mode === 'choice'? "请选择中文对应的英文单词":"请写出中文对应的英文单词"}</Typography.Paragraph>
           <Typography.Title level={2}>{state.question?.meanings.join('；')}</Typography.Title>
           <Typography.Paragraph type="secondary">
             {state.question?.partOfSpeech}

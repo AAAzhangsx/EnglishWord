@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Button, Card, Select, Space, Table, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Select, Space, Table, Tag, Typography, Input } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api, type Word } from '../lib/api';
@@ -13,6 +13,20 @@ export default function WordbooksPage() {
     queryFn: () => api.words(bookId!),
     enabled: bookId !== undefined,
   });
+  const [keyword, setKeyword] = useState('');
+  const query = keyword.trim().toLowerCase();
+  const filteredWords = (words.data?.items ?? []).filter(
+    (word) => 
+    {
+      const matchesEnglish = word.english.toLowerCase().includes(query);
+      const matchesChinese = word.meanings.some((meaning) =>
+        meaning.includes(query)
+      );
+
+      return matchesEnglish || matchesChinese
+    }
+  )
+  const canStart = (bookId !== undefined && words.isSuccess && words.data.items.length > 0)
   return (
     <Space orientation="vertical" size={20} className="full-width">
       <div>
@@ -40,21 +54,45 @@ export default function WordbooksPage() {
             style={{ minWidth: 220 }}
             value={bookId}
             loading={books.isPending}
-            onChange={setSelected}
+            onChange={(value) => {
+              setSelected(value);
+              setKeyword('');
+            }}
             options={books.data?.items.map((book) => ({
               value: book.id,
               label: `${book.name}（${book.wordCount} 词）`,
             }))}
           />
+          {canStart ?(
+            <Link to={`/study?wordbookId=${bookId}`}>
+              <Button type='primary'>开始背诵</Button>
+            </Link>
+          ) : (
+            <Button type='primary' disabled>
+              开始背诵
+            </Button>
+          )}
           <Tag>只读示例</Tag>
-          <Link to="/study">
-            <Button type="primary">开始背诵</Button>
-          </Link>
+
         </Space>
+        <Input 
+          aria-label = "搜索单词"
+          placeholder='搜索英文或中文释义'
+          allowClear
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+          style={{ marginBottom:16 }}
+        />
+        {words.isSuccess && (
+          <Typography.Paragraph type='secondary'>
+            共 {words.data.items.length} 个单词，
+            匹配 { filteredWords.length} 个
+          </Typography.Paragraph>
+        )}
         <Table<Word>
           rowKey="id"
           loading={words.isFetching}
-          dataSource={words.data?.items ?? []}
+          dataSource={filteredWords}
           pagination={{ pageSize: 10 }}
           scroll={{ x: 560 }}
           columns={[
