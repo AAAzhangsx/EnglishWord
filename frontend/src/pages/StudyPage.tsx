@@ -36,7 +36,7 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
     mutationFn: (action: () => Promise<StudyState>) => action(),
     onSuccess: (data) => {
       client.setQueryData(['study'], data);
-      if (!data.result || data.result.correct) {
+      if (!data.result) {
         setAnswer('');
       }
     },
@@ -46,7 +46,23 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
   });
   const noSession = study.error instanceof ApiError && study.error.status === 404;
   const busy = mutation.isPending;
+function handleAnswerSubmit() {
+  if (!state || state.finished || state.canAdvance || busy) {
+    return;
+  }
+  const submittedAnswer = answer.trim();
+  if (!submittedAnswer) {
+    message.warning('请先输入答案');
+    return;
+  }
 
+  mutation.mutate(() => api.answer(submittedAnswer));
+}
+
+
+async function handleRetry() {
+  await books.refetch();
+}
   return (
     <Space orientation="vertical" size={20} className="full-width">
       <div>
@@ -62,7 +78,18 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
         <Alert type="error" showIcon title="背诵状态加载失败" description={study.error.message} />
       )}
       {books.isError && (
-        <Alert type="error" showIcon title="词库加载失败" description={books.error.message} />
+        <Alert 
+        type="error" 
+        showIcon 
+        title="词库加载失败" 
+        description={books.error.message}
+        action={
+          <Button
+          loading={books.isFetched }
+          onClick={()=> void handleRetry()}>
+            重新加载
+          </Button>
+        } />
       )}
 
       {(!state || state.finished) && !review && (
@@ -147,7 +174,7 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
           <Typography.Paragraph type="secondary">
             {state.question?.partOfSpeech}
           </Typography.Paragraph>
-          <Form onFinish={() => mutation.mutate(() => api.answer(answer))}>
+          <Form onFinish={handleAnswerSubmit}>
             <Form.Item>
               {state.mode === 'choice' ? (
                 <Radio.Group
@@ -189,13 +216,13 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
                 loading={busy}
                 disabled={!answer.trim() || state.canAdvance}
               >
-                提交答案
+                {state.canAdvance ? "已答对": "提交答案"}
               </Button>
               <Button
                 disabled={!state.canAdvance || busy}
                 onClick={() => mutation.mutate(api.next)}
               >
-                下一题
+                {state.currentIndex + 1 === state.totalCount ? "完成本轮": "下一题"}
               </Button>
             </Space>
           </Form>
