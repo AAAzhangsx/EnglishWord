@@ -1,5 +1,5 @@
 #pragma once
-
+#include"repositories/user_repository.h"
 #include "core/study_engine.h"
 #include "repositories/word_repository.h"
 
@@ -15,7 +15,7 @@ namespace englishword {
 class Api {
 public:
     /// repository 为数据访问对象，必须在服务器关闭之后才销毁。
-    explicit Api(WordRepository& repository);
+    explicit Api(WordRepository& repository,UserRepository& users);
     /// 将健康检查、词库和示例背诵接口注册到 app。
     void registerRoutes(drogon::HttpAppFramework& app);
 
@@ -27,8 +27,11 @@ private:
     std::shared_ptr<StudyEngine> engine(const drogon::HttpRequestPtr& request) const;
     /// 返回引擎的当前状态，隐藏未作答题目的英文答案。
     Json::Value snapshot(StudyEngine& engine) const;
+        /// 从会话读取当前登录用户；未登录或账号已不存在时抛 401。
+    User requireUser(const drogon::HttpRequestPtr& request) const;
 
     WordRepository& m_repository; ///< 非拥有的数据库仓储引用。
+    UserRepository& m_users; ///< 非拥有的用户仓储引用。
     std::mutex m_mutex;           ///< 序列化示例业务访问，防止同会话并发作答重复计分。
 };
 
