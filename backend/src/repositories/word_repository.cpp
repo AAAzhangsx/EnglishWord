@@ -111,5 +111,28 @@ std::vector<Word> WordRepository::listDemoWords(std::int64_t bookId) const
     }
     return words;
 }
+Json::Value WordRepository::listWordbooksForUser(std::int64_t userId) const
+{
+    const auto rows = m_client->execSqlSync(
+        "SELECT b.id, b.name, b.owner_user_id, COUNT(w.id) AS word_count FROM wordbooks b "
+        "LEFT JOIN words w ON w.wordbook_id = b.id "
+        "WHERE b.owner_user_id IS NULL OR b.owner_user_id = ? "
+        "GROUP BY b.id, b.name, b.owner_user_id ORDER BY b.id", userId); // 公共 + 本人私有。
+    Json::Value books(Json::arrayValue); // 返回给 API 的词库数组。
+    for (const auto& row : rows) { // 当前词库。
+        Json::Value book;
+        book["id"] = Json::Int64(row["id"].as<std::int64_t>());
+        book["name"] = row["name"].as<std::string>();
+        book["wordCount"] = row["word_count"].as<int>();
+        book["isDemo"] = row["owner_user_id"].isNull(); // 无所属用户即公共示例。
+        books.append(book);
+    }
+    return books;
+}
 
+std::int64_t WordRepository::createWordbook(const std::string& name, std::int64_t ownerId) const
+{
+    m_client->execSqlSync("INSERT INTO wordbooks(owner_user_id, name) VALUES (?, ?)", ownerId, name);
+    return m_client->execSqlSync("SELECT last_insert_rowid() AS id")[0]["id"].as<std::int64_t>();
+}
 } // namespace englishword

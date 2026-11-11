@@ -1,5 +1,5 @@
 #include "controllers/api.h"
-
+#include "services/auth_service.h"
 #include <stdexcept>
 #include <string>
 
@@ -40,8 +40,16 @@ Json::Value wordJson(const Word& word)
 }
 
 } // namespace
-
-Api::Api(WordRepository& repository) : m_repository(repository) {}
+/// 将 user 转成对外 JSON；password_hash 绝不出现。
+Json::Value userJson(const User& user)
+{
+    Json::Value value;
+    value["id"] = Json::Int64(user.id);
+    value["username"] = user.username;
+    value["createdAt"] = user.createdAt;
+    return value;
+}
+Api::Api(WordRepository& repository, UserRepository& users) : m_repository(repository), m_users(users) {}
 
 void Api::respond(const Callback& callback, const std::function<Json::Value()>& action)
 {
@@ -78,7 +86,18 @@ std::shared_ptr<StudyEngine> Api::engine(const drogon::HttpRequestPtr& request) 
     }
     return *current;
 }
-
+User Api::requireUser(const drogon::HttpRequestPtr& request) const
+{
+    const auto id = request->session()->getOptional<std::int64_t>("user_id"); // 会话里的用户编号。
+    if (id) {
+        const auto user = m_users.findById(*id); // 账号可能已被删除。
+        if (user) {
+            return *user;
+        }
+        request->session()->erase("user_id"); // 清掉失效的会话，避免反复查库。
+    }
+    throw ApiError(drogon::k401Unauthorized, "请先登录。");
+}
 Json::Value Api::snapshot(StudyEngine& study) const
 {
     Json::Value value; // 当前背诵状态。
@@ -120,14 +139,39 @@ void Api::registerRoutes(drogon::HttpAppFramework& app)
         });
     }, {drogon::Get});
 
-    app.registerHandler("/api/wordbooks", [this](const drogon::HttpRequestPtr&, Callback&& callback) {
-        respond(callback, [this] {
-            Json::Value value; // 词库列表响应。
-            value["items"] = m_repository.listDemoWordbooks();
-            return value;
-        });
-    }, {drogon::Get});
+    app.registerHandler("/api/wordbooks",
+        [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
+            respond(callback, [this, &request] {
+                std::int64_t userId = 0; // 0 表示未登录：只看公共词库。
+                if (const auto id = request->session()->getOptional<std::int64_t>("user_id")) {
+                    userId = *id;
+                }
+                Json::Value value; // 词库列表响应。
+                value["items"] = m_repository.listWordbooksForUser(userId);
+                return value;
+            });
+        }, {drogon::Get});
 
+    app.registerHandler("/api/wordbooks",
+        [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
+            respond(callback, [this, &request] {
+                const auto user = requireUser(request); // 创建词库必须登录。
+                const auto& json = body(request);        // 创建参数。
+                if (!json["name"].isString()) {
+                    throw ApiError(drogon::k400BadRequest, "请提供词库名称。");
+                }
+                const auto name = json["name"].asString();
+                if (name.empty() || name.size() > 50) {
+                    throw ApiError(drogon::k400BadRequest, "词库名称长度应为 1 到 50 个字符。");
+                }
+                Json::Value book; // 新建词库的响应。
+                book["id"] = Json::Int64(m_repository.createWordbook(name, user.id));
+                book["name"] = name;
+                book["wordCount"] = 0;
+                book["isDemo"] = false;
+                return book;
+            });
+        }, {drogon::Post});
     app.registerHandler("/api/wordbooks/{1}/words",
         [this](const drogon::HttpRequestPtr&, Callback&& callback, std::int64_t bookId) {
             respond(callback, [this, bookId] {
@@ -143,7 +187,48 @@ void Api::registerRoutes(drogon::HttpAppFramework& app)
                 return value;
             });
         }, {drogon::Get});
-
+        app.registerHandler("/api/auth/register",
+        [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
+            respond(callback, [this, &request] {
+                const auto& json = body(request); // 注册参数。
+                if (!json["username"].isString() || !json["password"].isString()) {
+                    throw ApiError(drogon::k400BadRequest, "请提供 username 和 password。");
+                }
+                const auto username = json["username"].asString(); // 登录名。
+                const auto password = json["password"].asString(); // 明文密码，只在内存里用。
+                if (username.size() < 3 || username.size() > 32) {
+                    throw ApiError(drogon::k400BadRequest, "用户名长度应为 3 到 32 个字符。");
+                }
+                for (const char character : username) {
+                    const bool allowed = (character >= 'a' && character <= 'z') ||
+                                         (character >= 'A' && character <= 'Z') ||
+                                         (character >= '0' && character <= '9') || character == '_';
+                    if (!allowed) {
+                        throw ApiError(drogon::k400BadRequest, "用户名只能包含字母、数字和下划线。");
+                    }
+                }
+                if (password.size() < 8 || password.size() > 128) {
+                    throw ApiError(drogon::k400BadRequest, "密码长度应为 8 到 128 个字符。");
+                }
+                if (m_users.findByUsername(username)) { // 先友好地拦一次重名。
+                    throw ApiError(drogon::k409Conflict, "用户名已存在。");
+                }
+                std::int64_t id = 0; // 新用户编号。
+                try {
+                    id = m_users.create(username, AuthService::hashPassword(password));
+                } catch (const drogon::orm::DrogonDbException&) {
+                    // 两个请求同时注册同一用户名时，靠 UNIQUE 约束兜底。
+                    throw ApiError(drogon::k409Conflict, "用户名已存在。");
+                }
+                const auto created = m_users.findById(id); // 读回含 created_at 的完整记录。
+                if (!created) {
+                    throw std::runtime_error("注册后未能读回用户记录。");
+                }
+                Json::Value value;
+                value["user"] = userJson(*created);
+                return value;
+            });
+        }, {drogon::Post});
     app.registerHandler("/api/study", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
         respond(callback, [this, &request] { return snapshot(*engine(request)); });
     }, {drogon::Get});
@@ -212,6 +297,46 @@ void Api::registerRoutes(drogon::HttpAppFramework& app)
             return snapshot(*study);
         });
     }, {drogon::Post});
+    app.registerHandler("/api/auth/login",
+        [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
+            respond(callback, [this, &request] {
+                const auto& json = body(request); // 登录参数。
+                if (!json["username"].isString() || !json["password"].isString()) {
+                    throw ApiError(drogon::k400BadRequest, "请提供 username 和 password。");
+                }
+                const auto user = m_users.findByUsername(json["username"].asString());
+                if (!user ||
+                    !AuthService::verifyPassword(json["password"].asString(), user->passwordHash)) {
+                    // 不区分“查无此人”和“密码错误”，避免被用来枚举用户名。
+                    throw ApiError(drogon::k401Unauthorized, "用户名或密码错误。");
+                }
+                // Drogon 的 insert 只在键不存在时写入，这里用 modify 保证值被覆盖。
+                request->session()->modify<std::int64_t>(
+                    "user_id", [&user](std::int64_t& value) { value = user->id; });
+                request->session()->changeSessionIdToClient(); // 换会话 id，防会话固定攻击。
+                Json::Value value;
+                value["user"] = userJson(*user);
+                return value;
+            });
+        }, {drogon::Post});
+        app.registerHandler("/api/auth/logout",
+        [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
+            respond(callback, [&request] {
+                request->session()->erase("user_id"); // 只清身份，会话容器留着。
+                Json::Value value;
+                value["success"] = true;
+                return value;
+            });
+        }, {drogon::Post});
+
+    app.registerHandler("/api/auth/me",
+        [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
+            respond(callback, [this, &request] {
+                Json::Value value;
+                value["user"] = userJson(requireUser(request));
+                return value;
+            });
+        }, {drogon::Get});
 }
 
 } // namespace englishword

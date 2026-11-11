@@ -19,6 +19,10 @@ public:
     Json::Value listDemoWordbooks() const;
     /// 返回 bookId 对应的公共示例词库单词和全部释义。
     std::vector<Word> listDemoWords(std::int64_t bookId) const;
+        /// 返回公共词库和 userId 的私有词库；userId 为 0 表示未登录，只返回公共。
+    Json::Value listWordbooksForUser(std::int64_t userId) const;
+    /// 创建属于 ownerId 的私有词库并返回新编号。
+    std::int64_t createWordbook(const std::string& name, std::int64_t ownerId) const;
 
 private:
     /// 在事务内执行初始迁移，已经初始化的数据库不会重复导入。
