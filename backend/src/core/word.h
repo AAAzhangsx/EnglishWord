@@ -15,7 +15,7 @@ struct Word {
 };
 
 /// 当前提供看中文选英文和看中文拼写两种演示模式。
-enum class StudyMode { MultipleChoice, Spelling };
+enum class StudyMode { MultipleChoice, Spelling, Meaning };
 
 /// 一次提交的结果，由界面决定如何展示。
 struct AnswerResult {

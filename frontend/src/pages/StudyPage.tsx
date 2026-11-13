@@ -18,7 +18,17 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, ApiError, type StudyMode, type StudyState } from '../lib/api';
+const modeLabels: Record<StudyMode, string> = {
+  choice: '选择题',
+  spelling: '拼写单词',
+  meaning: '看英文输中文',
+};
 
+const modePrompts: Record<StudyMode, string> = {
+  choice: '请选择中文对应的英文单词',
+  spelling: '请写出中文对应的英文单词',
+  meaning: '请写出英文单词的中文释义',
+};
 export default function StudyPage({ review = false }: { review?: boolean }) {
   const { message } = App.useApp();
   const client = useQueryClient();
@@ -54,7 +64,7 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
         <Typography.Text type="secondary">
           {review
             ? '完成一轮后，把答错的单词再认真练习一遍。'
-            : '看中文，选出或写出对应的英文单词。'}
+            : '看中文选英文、看中文拼写，或看英文输中文。'}
         </Typography.Text>
       </div>
       {study.isPending && <Card loading />}
@@ -93,6 +103,7 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
                 options={[
                   { label: '拼写单词', value: 'spelling' },
                   { label: '选择题', value: 'choice' },
+                  { label: '看英文输中文', value: 'meaning' },
                 ]}
               />
             </Form.Item>
@@ -133,7 +144,7 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
       {state && !state.finished && (
         <Card className="study-card">
           <div className="study-meta">
-            <Tag color="green">{state.mode === 'choice' ? '选择题' : '拼写单词'}</Tag>
+            <Tag color="green">{modeLabels[state.mode]}</Tag>
             <Typography.Text>
               第 {state.currentIndex + 1} / {state.totalCount} 题 · 当前 {state.score} 分
             </Typography.Text>
@@ -142,8 +153,14 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
             percent={Math.round((state.currentIndex / state.totalCount) * 100)}
             showInfo={false}
           />
-          <Typography.Paragraph type="secondary">{ state.mode === 'choice'? "请选择中文对应的英文单词":"请写出中文对应的英文单词"}</Typography.Paragraph>
-          <Typography.Title level={2}>{state.question?.meanings.join('；')}</Typography.Title>
+                    <Typography.Paragraph type="secondary">
+            {modePrompts[state.mode]}
+          </Typography.Paragraph>
+          <Typography.Title level={2}>
+            {state.mode === 'meaning'
+              ? state.question?.english
+              : state.question?.meanings.join('；')}
+          </Typography.Title>
           <Typography.Paragraph type="secondary">
             {state.question?.partOfSpeech}
           </Typography.Paragraph>
@@ -162,9 +179,9 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
                 />
               ) : (
                 <Input
-                  aria-label="英文答案"
+                  aria-label={state.mode === 'meaning' ? '中文答案' : '英文答案'}
                   size="large"
-                  placeholder="输入英文单词"
+                  placeholder={state.mode === 'meaning' ? '输入中文释义': '输入英文单词'}
                   autoComplete="off"
                   spellCheck={false}
                   value={answer}
