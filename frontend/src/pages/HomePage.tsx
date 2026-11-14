@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Col, Row, Space, Statistic, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Col, Progress, Row, Space, Statistic, Tag, Typography } from 'antd';
 import { ArrowRightOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -7,6 +7,12 @@ import { api } from '../lib/api';
 export default function HomePage() {
   const health = useQuery({ queryKey: ['health'], queryFn: api.health });
   const books = useQuery({ queryKey: ['wordbooks'], queryFn: api.wordbooks });
+  const study = useQuery({
+    queryKey : ['study'],
+    queryFn: api.study,
+    staleTime: 0,
+  });
+  const state = study.data;
   return (
     <Space orientation="vertical" size={24} className="full-width">
       <section className="hero">
@@ -18,7 +24,7 @@ export default function HomePage() {
         <Space wrap>
           <Link to="/study">
             <Button type="primary" size="large" icon={<ArrowRightOutlined />}>
-              开始一轮背诵
+              {state && !state.finished ? '继续背诵' : '开始一轮背诵'}
             </Button>
           </Link>
           <Link to="/wordbooks">
@@ -32,7 +38,34 @@ export default function HomePage() {
           showIcon
           title="后端连接失败"
           description="请启动 C++ 服务，确认 8080 端口可用，再刷新页面。"
+          action={
+          <Button
+          loading={health.isFetching || books.isFetching}
+          onClick={()=> {
+            void health.refetch();
+            void books.refetch();
+          }}>
+        重新加载
+        </Button>
+        }
         />
+      )}
+      {state && !state.finished && (
+        <Card title="正在进行的学习">
+          <Typography.Paragraph>
+            当前第{state.currentIndex + 1} /{state.totalCount} 题
+          </Typography.Paragraph>
+
+          <Space size="large">
+            <Statistic title="本轮得分" value={state.score} />
+            <Statistic title="本轮错词" value={state.wrongCount}/>
+          </Space>
+
+          <Progress percent={Math.round((state.currentIndex/state.totalCount) * 100 )} />
+          <Link to="/study">
+          <Button type='primary'>继续背诵</Button>
+          </Link>
+        </Card>
       )}
       <Row gutter={[20, 20]}>
         <Col xs={24} md={8}>
@@ -77,7 +110,7 @@ export default function HomePage() {
         showIcon
         title="当前为开发骨架"
         description="示例词库保存在 SQLite；本轮学习通过浏览器会话暂存。注册登录、私人词库编辑、历史成绩和打卡尚待实现。"
-      />
+        />
     </Space>
   );
 }

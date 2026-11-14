@@ -27,6 +27,51 @@ export default function WordbooksPage() {
     }
   )
   const canStart = (bookId !== undefined && words.isSuccess && words.data.items.length > 0)
+  /**
+ * 将字符串内容作为 TSV 文件下载到本地
+ * @param content 要写入 TSV 文件的字符串内容（通常为多行、制表符分隔的文本）
+ */
+function downloadTsv(content: string) {
+  // 1. 创建 Blob：把字符串内容包装成二进制大对象
+  //    - '\uFEFF' 是 UTF-8 BOM（字节序标记），放在内容最前面
+  //      作用是让 Excel 等软件识别出"这是 UTF-8 编码"，避免打开时中文乱码
+  //    - type 指定 MIME 类型为 TSV，并声明字符集为 utf-8
+  const blob = new Blob(['\uFEFF', content], {
+    type: 'text/tab-separated-values;charset=utf-8',
+  });
+
+  // 2. 为 Blob 生成一个临时的、当前页面内有效的 URL（形如 blob:https://xxx/uuid）
+  const url = URL.createObjectURL(blob);
+
+  // 3. 创建一个隐藏的 <a> 标签，用来模拟用户点击下载
+  const link = document.createElement('a');
+  link.href = url;                 // 指向上面生成的 Blob URL
+  link.download = 'wordbook.tsv';  // 指定下载后的文件名（浏览器会以此名保存）
+
+  // 4. 将 <a> 插入 DOM
+  //    Firefox 等浏览器要求元素必须在文档中，click() 才能触发下载
+  document.body.appendChild(link);
+
+  // 5. 以编程方式触发点击，等价于用户点击了这个链接，开始下载
+  link.click();
+
+  // 6. 下载触发后，把 <a> 从 DOM 中移除，避免残留无用节点
+  link.remove();
+
+  // 7. 释放之前创建的 Blob URL，回收内存（否则该 URL 会一直占用内存直到页面关闭）
+  URL.revokeObjectURL(url);
+}
+
+  function handleExport() {
+    const rows = filteredWords.flatMap((word) =>
+      word.meanings.map((meaning) =>
+        [word.english, word.partOfSpeech, meaning].join('\t'),
+      ),
+    );
+    const content = ['english\tpos\tmeaning', ...rows].join('\n');
+
+    downloadTsv(content);
+  }
   return (
     <Space orientation="vertical" size={20} className="full-width">
       <div>
@@ -63,6 +108,7 @@ export default function WordbooksPage() {
               label: `${book.name}（${book.wordCount} 词）`,
             }))}
           />
+          <Button onClick={handleExport}>导出当前结果</Button>
           {canStart ?(
             <Link to={`/study?wordbookId=${bookId}`}>
               <Button type='primary'>开始背诵</Button>
