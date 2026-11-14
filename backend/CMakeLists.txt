@@ -12,6 +12,7 @@ endif()
 
 if(ENGLISHWORD_BUILD_SERVER)
     find_package(Drogon CONFIG REQUIRED)
+    find_package(OpenSSL REQUIRED)
     file(READ "${CMAKE_CURRENT_SOURCE_DIR}/db/migrations/001_init.sql" ENGLISHWORD_SCHEMA)
     file(READ "${CMAKE_CURRENT_SOURCE_DIR}/data/demo.tsv" ENGLISHWORD_DEMO_TSV)
     configure_file(cmake/resources.h.in generated/resources.h @ONLY)
@@ -20,9 +21,13 @@ if(ENGLISHWORD_BUILD_SERVER)
         src/repositories/word_repository.h
         src/controllers/api.cpp
         src/controllers/api.h
+        src/repositories/user_repository.cpp
+        src/repositories/user_repository.h
+        src/services/auth_service.cpp
+        src/services/auth_service.h
     )
     target_include_directories(englishword_server_lib PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
-    target_link_libraries(englishword_server_lib PUBLIC englishword_core Drogon::Drogon)
+    target_link_libraries(englishword_server_lib PUBLIC englishword_core Drogon::Drogon OpenSSL::Crypto)
     add_executable(englishword_server src/main.cpp)
     target_link_libraries(englishword_server PRIVATE englishword_server_lib)
     install(TARGETS englishword_server RUNTIME DESTINATION bin)
@@ -36,6 +41,9 @@ if(BUILD_TESTING)
         add_executable(database_tests ../tests/database_tests.cpp)
         target_link_libraries(database_tests PRIVATE englishword_server_lib)
         add_test(NAME database COMMAND database_tests)
+        add_executable(auth_tests ../tests/auth_tests.cpp)
+        target_link_libraries(auth_tests PRIVATE englishword_server_lib)
+        add_test(NAME auth COMMAND auth_tests)
         find_package(Python3 COMPONENTS Interpreter)
         if(Python3_Interpreter_FOUND)
             add_test(NAME api_integration COMMAND "${Python3_EXECUTABLE}"

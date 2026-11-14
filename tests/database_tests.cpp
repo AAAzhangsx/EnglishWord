@@ -1,5 +1,5 @@
 #include "repositories/word_repository.h"
-
+#include "repositories/user_repository.h"
 #include <chrono>
 #include <filesystem>
 #include <iostream>
@@ -28,6 +28,31 @@ int main()
             if (!foundMultipleMeanings || !repository.listDemoWords(-1).empty()) {
                 throw std::runtime_error("多释义或不存在的词库查询不正确。");
             }
+        }
+                englishword::UserRepository users(path.string()); // 与词库共用同一个测试库文件。
+        const auto userId = users.create("alice", "hash-1"); // 新用户的编号。
+        if (userId <= 0) {
+            throw std::runtime_error("插入用户应返回正整数编号。");
+        }
+        const auto found = users.findByUsername("alice"); // 按用户名回查。
+        if (!found || found->username != "alice" || found->passwordHash != "hash-1" ||
+            found->createdAt.empty()) {
+            throw std::runtime_error("按用户名查询用户结果不正确。");
+        }
+        if (!users.findById(userId)) {
+            throw std::runtime_error("按编号查询用户结果不正确。");
+        }
+        if (users.findByUsername("nobody")) {
+            throw std::runtime_error("不存在的用户应返回空。");
+        }
+        bool duplicated = false; // 是否被 UNIQUE 约束拦下。
+        try {
+            users.create("alice", "hash-2");
+        } catch (const std::exception&) {
+            duplicated = true;
+        }
+        if (!duplicated) {
+            throw std::runtime_error("重复用户名应被唯一约束拒绝。");
         }
         std::filesystem::remove(path);
         std::cout << "Database migration and persistence passed.\n";

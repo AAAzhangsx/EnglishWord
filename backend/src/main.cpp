@@ -47,8 +47,9 @@ int main(int argc, char* argv[])
         if (!parent.empty()) {
             std::filesystem::create_directories(parent);
         }
-        englishword::WordRepository repository(database); // 持久化示例词库。
-        englishword::Api api(repository); // HTTP 路由及业务桥接。
+        englishword::WordRepository repository(database); // 持久化示例词库，同时负责建表。
+        englishword::UserRepository users(database); // 用户表读写。
+        englishword::Api api(repository,users); // HTTP 路由及业务桥接。
         auto& app = drogon::app(); // Drogon 框架单例。
         app.setLogLevel(trantor::Logger::kWarn)
             .setThreadNum(2)
@@ -64,7 +65,8 @@ int main(int argc, char* argv[])
         }
         api.registerRoutes(app);
         std::cout << "EnglishWord API: http://" << host << ':' << port << "\n"
-                  << "Demo mode: accounts and study history are not implemented yet.\n" << std::flush;
+                  << "Accounts: register enabled; login and study history are still in progress.\n"
+                  << std::flush;
         app.run();
     } catch (const std::exception& error) { // 启动错误写入标准错误。
         std::cerr << "启动失败：" << error.what() << '\n';

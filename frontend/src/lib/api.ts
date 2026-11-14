@@ -1,3 +1,12 @@
+export interface User {
+  id: number;
+  username: string;
+  createdAt: string;
+}
+
+export interface AuthResponse {
+  user: User;
+}
 export interface Wordbook {
   id: number;
   name: string;
@@ -12,7 +21,7 @@ export interface Word {
   meanings: string[];
 }
 
-export type StudyMode = 'choice' | 'spelling';
+export type StudyMode = 'choice' | 'spelling' | 'meaning';
 
 export interface StudyState {
   mode: StudyMode;
@@ -26,6 +35,7 @@ export interface StudyState {
   question: {
     wordId: number;
     partOfSpeech: string;
+    english?: string;
     meanings: string[];
     choices: string[];
   } | null;
@@ -71,4 +81,10 @@ export const api = {
   answer: (answer: string) => request<StudyState>('/study/answer', { answer }),
   next: () => request<StudyState>('/study/next', {}),
   review: () => request<StudyState>('/study/review', {}),
+  register: (username: string, password: string) =>
+    request<AuthResponse>('/auth/register', { username, password }),
+  login: (username: string, password: string) =>
+    request<AuthResponse>('/auth/login', { username, password }),
+  logout: () => request<{ success: boolean }>('/auth/logout', {}),
+  me: () => request<AuthResponse>('/auth/me'),
 };
