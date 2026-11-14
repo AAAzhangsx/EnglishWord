@@ -21,7 +21,7 @@ export interface Word {
   meanings: string[];
 }
 
-export type StudyMode = 'choice' | 'spelling';
+export type StudyMode = 'choice' | 'spelling' | 'meaning';
 
 export interface StudyState {
   mode: StudyMode;
@@ -35,6 +35,7 @@ export interface StudyState {
   question: {
     wordId: number;
     partOfSpeech: string;
+    english?: string;
     meanings: string[];
     choices: string[];
   } | null;

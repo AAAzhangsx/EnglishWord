@@ -21,7 +21,7 @@
 | POST /study/next | `{}`，无业务字段 | StudyState，移动到下一题 | 无任务 404，当前题未答对或已结束 409 |
 | POST /study/review | `{}`，无业务字段 | 新一轮 StudyState，只含上一轮错词，采用拼写模式 | 无错词 400，无任务 404，上一轮未结束 409 |
 
-start.wordbookId 是 integer；start.mode 是 string，只允许 choice（看中文选英文）和 spelling（看中文拼写）。选择题至少需要两个不同单词，最多四个选项。不存在的词库在 start 中也按空词库返回 400。
+start.wordbookId 是 integer；start.mode 是 string，只允许 choice（看中文选英文）和 spelling（看中文拼写）和meaning(看英文写中文)。选择题至少需要两个不同单词，最多四个选项。不存在的词库在 start 中也按空词库返回 400。
 
 ### Wordbook：词库
 
@@ -63,9 +63,10 @@ Question 的字段：
 | wordId | integer | 当前题对应的单词编号 |
 | partOfSpeech | string | 词性，例如 "n." |
 | meanings | string[] | 提示中文，例如 ["苹果"] |
+| english | string[] |提示英文,例如["apple"] |
 | choices | string[] | 选择题选项，提交选项文本作为 answer；拼写题为 [] |
 
-题目不含独立的标准英文答案字段。选择题选项顺序可能随响应改变，前端不能提交选项序号。
+题目不含独立的标准英文(或中文,取决于模式)答案字段。选择题选项顺序可能随响应改变，前端不能提交选项序号。
 
 AnswerResult 的字段：
 
@@ -74,7 +75,7 @@ AnswerResult 的字段：
 | correct | boolean | **本次**输入是否正确 |
 | firstAttempt | boolean | 是否当前题首次提交有效答案 |
 | scoreDelta | integer | 首次对 +10、首次错 -10、即时重试 0 |
-| message | string | 反馈文字，错误时带首字母提示 |
+| message | string | 反馈文字，错误时带首字母提示(非meaning模式) |
 
 ### 一个完整返回例子
 
