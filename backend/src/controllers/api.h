@@ -60,4 +60,4 @@ private:
     std::mutex m_mutex;                 ///< 防止同 Cookie 并发提交重复计分或内存/数据库失配。
 };
 
-} // namespace englishword
+} // namespace

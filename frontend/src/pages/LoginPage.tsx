@@ -1,8 +1,20 @@
 import { useState } from 'react';
-import { App as AntApp, Button, Card, Form, Input, Segmented, Space, Typography } from 'antd';
+import {
+  App as AntApp,
+  Button,
+  Card,
+  Form,
+  Input,
+  Result,
+  Segmented,
+  Space,
+  Typography,
+} from 'antd';
+import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
+import { useCurrentUser } from '../lib/queries';
 
 type Mode = 'login' | 'register';
 
@@ -12,32 +24,75 @@ interface FormValues {
 }
 
 export default function LoginPage() {
-  const [mode, setMode] = useState<Mode>('login'); // 当前在登录还是注册。
+  const [mode, setMode] = useState<Mode>('login');
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { message } = AntApp.useApp(); // 全局提示。
+  const { message } = AntApp.useApp();
+  const { data: user, isPending } = useCurrentUser();
 
   const mutation = useMutation({
     mutationFn: async (values: FormValues) => {
-      if (mode === 'register') {
-        await api.register(values.username, values.password); // 先注册。
-      }
-      return api.login(values.username, values.password); // 注册后直接登录，少一步。
+      if (mode === 'register') await api.register(values.username, values.password);
+      // 注册成功后直接登录，少一步操作。
+      return api.login(values.username, values.password);
     },
     onSuccess: async (data) => {
-      await queryClient.invalidateQueries({ queryKey: ['me'] }); // 让“我是谁”重新拉一次。
+      await queryClient.invalidateQueries({ queryKey: ['me'] });
+      // 登录后旧的访客会话不再可用，一并刷新。
+      await queryClient.invalidateQueries({ queryKey: ['study'] });
       message.success(`欢迎，${data.user.username}`);
       navigate('/');
     },
-    onError: (error: Error) => {
-      message.error(error.message); // 后端返回的 {"error":"..."} 会在这里显示。
-    },
+    onError: (error: Error) => message.error(error.message),
   });
 
+  if (isPending) {
+    return (
+      <div className="auth-wrap">
+        <Card className="auth-card" loading />
+      </div>
+    );
+  }
+
+  if (user) {
+    return (
+      <div className="auth-wrap">
+        <Card className="auth-card auth-card--result">
+          <Result
+            status="success"
+            title={`你已登录：${user.username}`}
+            subTitle="可以直接开始背诵，成绩、错题与打卡都会保存到这个账号。"
+            extra={
+              <Space wrap>
+                <Button type="primary" onClick={() => navigate('/study')}>
+                  开始背诵
+                </Button>
+                <Button onClick={() => navigate('/account')}>账号与打卡</Button>
+              </Space>
+            }
+          />
+        </Card>
+      </div>
+    );
+  }
+
   return (
-    <Space orientation="vertical" size={20} className="full-width">
-      <Typography.Title level={2}>账号</Typography.Title>
-      <Card style={{ maxWidth: 460 }}>
+    <div className="auth-wrap">
+      <Card className="auth-card" bordered={false}>
+        <div className="auth-brand">
+          <span className="brand-mark auth-brand-mark" aria-hidden="true">
+            E
+          </span>
+          <Typography.Title level={2}>
+            {mode === 'login' ? '欢迎回来' : '创建账号'}
+          </Typography.Title>
+          <Typography.Text type="secondary">
+            {mode === 'login'
+              ? '登录后可以保存成绩、错题和打卡记录。'
+              : '注册一个账号，从今天开始积累。'}
+          </Typography.Text>
+        </div>
+
         <Segmented
           block
           value={mode}
@@ -47,33 +102,61 @@ export default function LoginPage() {
             { label: '注册', value: 'register' },
           ]}
         />
+
         <Form<FormValues>
           layout="vertical"
+          className="auth-form"
           onFinish={(values) => mutation.mutate(values)}
-          style={{ marginTop: 20 }}
+          requiredMark={false}
         >
           <Form.Item
             name="username"
             label="用户名"
-            rules={[{ required: true, message: '请输入用户名' }]}
+            rules={[
+              { required: true, message: '请输入用户名' },
+              {
+                pattern: /^[A-Za-z0-9_]{3,32}$/,
+                message: '3-32 位字母、数字或下划线',
+              },
+            ]}
           >
-            <Input autoComplete="username" placeholder="3-32 位字母、数字或下划线" />
+            <Input
+              size="large"
+              autoComplete="username"
+              prefix={<UserOutlined className="auth-input-icon" />}
+              placeholder="3-32 位字母、数字或下划线"
+            />
           </Form.Item>
           <Form.Item
             name="password"
             label="密码"
-            rules={[{ required: true, message: '请输入密码' }]}
+            rules={[
+              { required: true, message: '请输入密码' },
+              { min: 8, message: '密码至少 8 位' },
+            ]}
           >
             <Input.Password
+              size="large"
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              prefix={<LockOutlined className="auth-input-icon" />}
               placeholder="至少 8 位"
             />
           </Form.Item>
-          <Button type="primary" htmlType="submit" loading={mutation.isPending} block>
+          <Button type="primary" size="large" htmlType="submit" loading={mutation.isPending} block>
             {mode === 'login' ? '登录' : '注册并登录'}
           </Button>
         </Form>
+
+        <div className="auth-foot">
+          <Button type="link" onClick={() => navigate('/study')}>
+            先以访客身份体验
+          </Button>
+        </div>
+
+        <Typography.Paragraph type="secondary" className="auth-note-text">
+          访客作答只保留一小时且不写入账号；登录后成绩、错题与打卡会长期保存。
+        </Typography.Paragraph>
       </Card>
-    </Space>
+    </div>
   );
 }
