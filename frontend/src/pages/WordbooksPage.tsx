@@ -72,10 +72,12 @@ export default function WordbooksPage() {
   const { message } = AntApp.useApp();
   const screens = Grid.useBreakpoint();
   const compact = screens.md === false;
-  const { data: user } = useCurrentUser();
+  const auth = useCurrentUser();
+  const user = auth.data;
 
   const [selected, setSelected] = useState<number>();
   const [keyword, setKeyword] = useState('');
+  const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
   const [addWordOpen, setAddWordOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -85,7 +87,9 @@ export default function WordbooksPage() {
   const [importForm] = Form.useForm<ImportValues>();
 
   const books = useQuery({ queryKey: ['wordbooks'], queryFn: api.wordbooks });
-  const bookId = selected ?? books.data?.items[0]?.id;
+  const bookId = books.data?.items.some((book) => book.id === selected)
+    ? selected
+    : books.data?.items[0]?.id;
   const currentBook = books.data?.items.find((book) => book.id === bookId);
   const words = useQuery({
     queryKey: ['words', bookId],
@@ -112,6 +116,9 @@ export default function WordbooksPage() {
     onSuccess: (book) => {
       setCreateOpen(false);
       setSelected(book.id);
+      setKeyword('');
+      setPage(1);
+      queryClient.setQueryData(['words', book.id], { items: [] });
       message.success(`已创建词库「${book.name}」`);
       void queryClient.invalidateQueries({ queryKey: ['wordbooks'] });
     },
@@ -145,12 +152,12 @@ export default function WordbooksPage() {
     onSuccess: (result) => {
       setImportOpen(false);
       message.success(
-        `导入完成：新增 ${result.imported} 条，补全 ${result.merged} 条，跳过 ${result.skipped} 条`,
+        `导入完成：新增 ${result.importedCount} 条，补全 ${result.mergedCount} 条，跳过 ${result.skippedCount} 条`,
       );
       void queryClient.invalidateQueries({ queryKey: ['words', bookId] });
       void queryClient.invalidateQueries({ queryKey: ['wordbooks'] });
     },
-    onError: (error: Error) => message.error(error.message),
+    // 保留弹窗和输入，逐行校验信息在表单内展示。
   });
 
   function handleExport() {
@@ -261,6 +268,15 @@ export default function WordbooksPage() {
         }
       />
 
+      {auth.isError ? (
+        <ErrorState
+          title="账号状态加载失败"
+          error={auth.error}
+          onRetry={() => void auth.refetch()}
+          retrying={auth.isFetching}
+        />
+      ) : null}
+
       {books.isError ? (
         <ErrorState
           title="词库列表加载失败"
@@ -290,6 +306,7 @@ export default function WordbooksPage() {
               onChange={(value) => {
                 setSelected(value);
                 setKeyword('');
+                setPage(1);
               }}
               options={books.data?.items.map((book) => ({
                 value: book.id,
@@ -316,12 +333,18 @@ export default function WordbooksPage() {
               allowClear
               prefix={<SearchOutlined />}
               value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
+              onChange={(event) => {
+                setKeyword(event.target.value);
+                setPage(1);
+              }}
             />
             <Button
               icon={<UploadOutlined />}
               disabled={!canEdit}
-              onClick={() => setImportOpen(true)}
+              onClick={() => {
+                importWords.reset();
+                setImportOpen(true);
+              }}
               title={canEdit ? undefined : '仅私人词库支持导入'}
             >
               导入 TSV
@@ -360,39 +383,66 @@ export default function WordbooksPage() {
         <Table<Word>
           rowKey="id"
           size={compact ? 'small' : 'middle'}
-          loading={books.isPending || words.isPending}
+          loading={books.isPending || words.isFetching}
           dataSource={filteredWords}
           columns={columns}
           pagination={{
+            current: Math.min(
+              page,
+              Math.max(1, Math.ceil(filteredWords.length / (compact ? 8 : 10))),
+            ),
+            onChange: setPage,
             pageSize: compact ? 8 : 10,
             hideOnSinglePage: true,
             showSizeChanger: false,
             size: compact ? 'small' : undefined,
           }}
-          scroll={compact ? undefined : { x: 600 }}
+          scroll={{ x: compact ? 300 : 600 }}
           locale={{
-            emptyText: query ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={`没有匹配「${keyword.trim()}」的单词`}
-              >
-                <Button onClick={() => setKeyword('')}>清除搜索</Button>
-              </Empty>
-            ) : (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={canEdit ? '这本词库还没有单词' : '暂时没有单词'}
-              >
-                {canEdit ? (
-                  <Space>
-                    <Button type="primary" onClick={() => setAddWordOpen(true)}>
-                      添加单词
-                    </Button>
-                    <Button onClick={() => setImportOpen(true)}>导入 TSV</Button>
-                  </Space>
-                ) : null}
-              </Empty>
-            ),
+            emptyText:
+              books.isError || words.isError ? (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="数据未能加载，请使用上方按钮重试"
+                />
+              ) : query ? (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={`没有匹配「${keyword.trim()}」的单词`}
+                >
+                  <Button
+                    onClick={() => {
+                      setKeyword('');
+                      setPage(1);
+                    }}
+                  >
+                    清除搜索
+                  </Button>
+                </Empty>
+              ) : (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={
+                    !bookId ? '还没有可用的词库' : canEdit ? '这本词库还没有单词' : '暂时没有单词'
+                  }
+                >
+                  {canEdit ? (
+                    <Space>
+                      <Button type="primary" onClick={() => setAddWordOpen(true)}>
+                        添加单词
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          importWords.reset();
+                          setImportOpen(true);
+                        }}
+                      >
+                        导入 TSV
+                      </Button>
+                    </Space>
+                  ) : null}
+                </Empty>
+              ),
           }}
         />
       </Card>
@@ -407,7 +457,13 @@ export default function WordbooksPage() {
       <Modal
         title="新建词库"
         open={createOpen}
-        onCancel={() => setCreateOpen(false)}
+        onCancel={() => {
+          if (!createBook.isPending) setCreateOpen(false);
+        }}
+        cancelButtonProps={{ disabled: createBook.isPending }}
+        closable={!createBook.isPending}
+        maskClosable={!createBook.isPending}
+        keyboard={!createBook.isPending}
         onOk={() => createForm.submit()}
         okText="创建"
         cancelText="取消"
@@ -418,6 +474,7 @@ export default function WordbooksPage() {
           form={createForm}
           layout="vertical"
           preserve={false}
+          disabled={createBook.isPending}
           onFinish={(values) => createBook.mutate(values.name.trim())}
         >
           <Form.Item
@@ -436,7 +493,13 @@ export default function WordbooksPage() {
       <Modal
         title={`添加单词${currentBook ? `：${currentBook.name}` : ''}`}
         open={addWordOpen}
-        onCancel={() => setAddWordOpen(false)}
+        onCancel={() => {
+          if (!addWord.isPending) setAddWordOpen(false);
+        }}
+        cancelButtonProps={{ disabled: addWord.isPending }}
+        closable={!addWord.isPending}
+        maskClosable={!addWord.isPending}
+        keyboard={!addWord.isPending}
         onOk={() => addWordForm.submit()}
         okText="添加"
         cancelText="取消"
@@ -447,6 +510,7 @@ export default function WordbooksPage() {
           form={addWordForm}
           layout="vertical"
           preserve={false}
+          disabled={addWord.isPending}
           onFinish={(values) => {
             const meanings = values.meanings
               .split('\n')
@@ -454,7 +518,7 @@ export default function WordbooksPage() {
               .filter(Boolean);
             addWord.mutate({
               english: values.english.trim(),
-              partOfSpeech: values.partOfSpeech.trim(),
+              partOfSpeech: values.partOfSpeech?.trim() ?? '',
               meanings,
             });
           }}
@@ -464,7 +528,11 @@ export default function WordbooksPage() {
               <Form.Item
                 label="英文单词"
                 name="english"
-                rules={[{ required: true, whitespace: true, message: '请输入英文单词' }]}
+                rules={[
+                  { required: true, whitespace: true, message: '请输入英文单词' },
+                  { pattern: /[A-Za-z]/, message: '单词至少包含一个英文字母' },
+                  { max: 100, message: '单词不超过 100 个字符' },
+                ]}
               >
                 <Input placeholder="例如：apple" autoFocus autoComplete="off" spellCheck={false} />
               </Form.Item>
@@ -473,9 +541,9 @@ export default function WordbooksPage() {
               <Form.Item
                 label="词性"
                 name="partOfSpeech"
-                rules={[{ required: true, message: '请输入词性' }]}
+                rules={[{ max: 50, message: '词性不超过 50 个字符' }]}
               >
-                <Input placeholder="例如：n." autoComplete="off" />
+                <Input placeholder="例如：n.（选填）" autoComplete="off" maxLength={50} />
               </Form.Item>
             </Col>
           </Row>
@@ -501,7 +569,13 @@ export default function WordbooksPage() {
       <Modal
         title={`导入 TSV${currentBook ? `：${currentBook.name}` : ''}`}
         open={importOpen}
-        onCancel={() => setImportOpen(false)}
+        onCancel={() => {
+          if (!importWords.isPending) setImportOpen(false);
+        }}
+        cancelButtonProps={{ disabled: importWords.isPending }}
+        closable={!importWords.isPending}
+        maskClosable={!importWords.isPending}
+        keyboard={!importWords.isPending}
         onOk={() => importForm.submit()}
         okText="开始导入"
         cancelText="取消"
@@ -509,6 +583,15 @@ export default function WordbooksPage() {
         confirmLoading={importWords.isPending}
         destroyOnHidden
       >
+        {importWords.isError ? (
+          <Alert
+            className="modal-hint"
+            type="error"
+            showIcon
+            title="导入未成功"
+            description={importWords.error.message}
+          />
+        ) : null}
         <Alert
           className="modal-hint"
           type="info"
@@ -520,13 +603,22 @@ export default function WordbooksPage() {
           form={importForm}
           layout="vertical"
           preserve={false}
+          disabled={importWords.isPending}
           initialValues={{ duplicatePolicy: 'merge' }}
           onFinish={(values) => importWords.mutate(values)}
         >
           <Form.Item
             label="TSV 内容"
             name="content"
-            rules={[{ required: true, message: '请粘贴 TSV 内容' }]}
+            rules={[
+              { required: true, whitespace: true, message: '请粘贴 TSV 内容' },
+              {
+                validator: (_rule, value: string) =>
+                  !value || new TextEncoder().encode(value).length <= 48 * 1024
+                    ? Promise.resolve()
+                    : Promise.reject(new Error('TSV 内容不能超过 48 KiB，请拆分后导入')),
+              },
+            ]}
           >
             <Input.TextArea
               className="code-area"

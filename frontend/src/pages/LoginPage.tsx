@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   App as AntApp,
+  Alert,
   Button,
   Card,
   Form,
@@ -12,9 +13,10 @@ import {
 } from 'antd';
 import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useCurrentUser } from '../lib/queries';
+import { ErrorState } from '../components/PageStates';
 
 type Mode = 'login' | 'register';
 
@@ -26,9 +28,19 @@ interface FormValues {
 export default function LoginPage() {
   const [mode, setMode] = useState<Mode>('login');
   const navigate = useNavigate();
+  const location = useLocation();
+  const from = (location.state as { from?: unknown } | null)?.from;
+  const destination =
+    typeof from === 'string' &&
+    from.startsWith('/') &&
+    !from.startsWith('//') &&
+    !from.startsWith('/login')
+      ? from
+      : '/';
   const queryClient = useQueryClient();
   const { message } = AntApp.useApp();
-  const { data: user, isPending } = useCurrentUser();
+  const auth = useCurrentUser();
+  const { data: user, isPending } = auth;
 
   const mutation = useMutation({
     mutationFn: async (values: FormValues) => {
@@ -37,13 +49,13 @@ export default function LoginPage() {
       return api.login(values.username, values.password);
     },
     onSuccess: async (data) => {
-      await queryClient.invalidateQueries({ queryKey: ['me'] });
-      // 登录后旧的访客会话不再可用，一并刷新。
-      await queryClient.invalidateQueries({ queryKey: ['study'] });
+      // 登录会切换数据归属，取消旧请求并清除访客及上一个账号的缓存。
+      await queryClient.cancelQueries();
+      queryClient.clear();
+      queryClient.setQueryData(['me'], data.user);
       message.success(`欢迎，${data.user.username}`);
-      navigate('/');
+      navigate(destination, { replace: true });
     },
-    onError: (error: Error) => message.error(error.message),
   });
 
   if (isPending) {
@@ -78,7 +90,7 @@ export default function LoginPage() {
 
   return (
     <div className="auth-wrap">
-      <Card className="auth-card" bordered={false}>
+      <Card className="auth-card">
         <div className="auth-brand">
           <span className="brand-mark auth-brand-mark" aria-hidden="true">
             E
@@ -96,18 +108,43 @@ export default function LoginPage() {
         <Segmented
           block
           value={mode}
-          onChange={(value) => setMode(value as Mode)}
+          disabled={mutation.isPending}
+          onChange={(value) => {
+            setMode(value as Mode);
+            mutation.reset();
+          }}
           options={[
             { label: '登录', value: 'login' },
             { label: '注册', value: 'register' },
           ]}
         />
 
+        {auth.isError ? (
+          <div className="auth-error">
+            <ErrorState
+              title="账号状态加载失败"
+              error={auth.error}
+              onRetry={() => void auth.refetch()}
+              retrying={auth.isFetching}
+            />
+          </div>
+        ) : null}
+        {mutation.isError ? (
+          <Alert
+            className="auth-error"
+            type="error"
+            showIcon
+            title={mode === 'login' ? '登录未成功' : '注册或登录未成功'}
+            description={mutation.error.message}
+          />
+        ) : null}
+
         <Form<FormValues>
           layout="vertical"
           className="auth-form"
           onFinish={(values) => mutation.mutate(values)}
           requiredMark={false}
+          disabled={mutation.isPending}
         >
           <Form.Item
             name="username"

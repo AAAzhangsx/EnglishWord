@@ -8,7 +8,6 @@ import {
   Grid,
   Layout,
   Menu,
-  Tag,
   Typography,
 } from 'antd';
 import {
@@ -84,7 +83,8 @@ export default function App() {
   useEffect(() => {
     window.scrollTo(0, 0);
     setNavOpen(false);
-  }, [location.pathname]);
+    document.title = `${pageTitle} · EnglishWord`;
+  }, [location.pathname, pageTitle]);
 
   const menuItems = useMemo(
     () =>
@@ -92,19 +92,29 @@ export default function App() {
         key: item.key,
         icon: item.icon,
         label: (
-          <Link to={item.key} onClick={() => setNavOpen(false)}>
+          <Link
+            to={item.key}
+            aria-current={item.key === location.pathname ? 'page' : undefined}
+            onClick={() => setNavOpen(false)}
+          >
             {item.label}
           </Link>
         ),
       })),
-    [],
+    [location.pathname],
   );
 
   const userMenu = {
     items: [
       { key: 'account', icon: <IdcardOutlined />, label: '账号与打卡' },
       { type: 'divider' as const },
-      { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', danger: true },
+      {
+        key: 'logout',
+        icon: <LogoutOutlined />,
+        label: '退出登录',
+        danger: true,
+        disabled: logout.isPending,
+      },
     ],
     onClick: ({ key }: { key: string }) => {
       if (key === 'account') navigate('/account');
@@ -122,6 +132,20 @@ export default function App() {
         <small>每天记住一点</small>
       </span>
     </Link>
+  );
+
+  const sidebarFoot = (
+    <div className="sidebar-foot">
+      <div className="sidebar-reminder">
+        <ReadOutlined aria-hidden="true" />
+        <strong>一点积累，也有回响。</strong>
+        <p>{user ? '把今天学到的，变成明天记得的。' : '登录后，留住每一次学习的进步。'}</p>
+        <Link to={user ? '/account' : '/login'} onClick={() => setNavOpen(false)}>
+          {user ? '记录今天的坚持 →' : '开启我的学习记录 →'}
+        </Link>
+      </div>
+      <span className="sidebar-caption">A LITTLE, EVERY DAY.</span>
+    </div>
   );
 
   return (
@@ -146,32 +170,28 @@ export default function App() {
         theme="light"
       >
         {brand}
-        <Menu className="app-nav" mode="inline" selectedKeys={[selectedKey]} items={menuItems} />
-        <div className="sidebar-foot">
-          <Tag bordered={false} color="green">
-            课程项目 v0.1
-          </Tag>
-          <p>登录后自动保存成绩、错题与打卡记录。</p>
-        </div>
+        <div className="sidebar-label">我的学习空间</div>
+        <nav aria-label="主导航">
+          <Menu className="app-nav" mode="inline" selectedKeys={[selectedKey]} items={menuItems} />
+        </nav>
+        {sidebarFoot}
       </Layout.Sider>
 
       <Drawer
         className="nav-drawer"
         placement="left"
+        title="学习导航"
         width={272}
         open={navOpen}
         onClose={() => setNavOpen(false)}
-        closable={false}
+        closable
         styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column' } }}
       >
         {brand}
-        <Menu mode="inline" selectedKeys={[selectedKey]} items={menuItems} />
-        <div className="sidebar-foot">
-          <Tag bordered={false} color="green">
-            课程项目 v0.1
-          </Tag>
-          <p>登录后自动保存成绩、错题与打卡记录。</p>
-        </div>
+        <nav aria-label="移动端导航">
+          <Menu className="app-nav" mode="inline" selectedKeys={[selectedKey]} items={menuItems} />
+        </nav>
+        {sidebarFoot}
       </Drawer>
 
       <Layout className="app-main">
@@ -182,6 +202,7 @@ export default function App() {
                 type="text"
                 className="nav-toggle"
                 aria-label="打开导航菜单"
+                aria-expanded={navOpen}
                 icon={<MenuOutlined />}
                 onClick={() => setNavOpen(true)}
               />
@@ -208,14 +229,15 @@ export default function App() {
               </Dropdown>
             ) : (
               <>
-                <Tag bordered={false} icon={<UserOutlined />} className="guest-tag">
-                  访客
-                </Tag>
+                <span className="guest-tag">
+                  <UserOutlined /> 访客体验
+                </span>
                 <Button
                   type="primary"
-                  size="small"
                   icon={<LoginOutlined />}
-                  onClick={() => navigate('/login')}
+                  onClick={() =>
+                    navigate('/login', { state: { from: location.pathname + location.search } })
+                  }
                 >
                   登录 / 注册
                 </Button>
@@ -224,15 +246,15 @@ export default function App() {
           </div>
         </Layout.Header>
 
-        <Layout.Content className="app-content" id="main">
+        <Layout.Content className="app-content" id="main" role="main" tabIndex={-1}>
           <ErrorBoundary key={location.pathname}>
             <Suspense fallback={<PageSkeleton />}>
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/wordbooks" element={<WordbooksPage />} />
                 <Route path="/login" element={<LoginPage />} />
-                <Route path="/study" element={<StudyPage />} />
-                <Route path="/review" element={<StudyPage review />} />
+                <Route path="/study" element={<StudyPage key="study" />} />
+                <Route path="/review" element={<StudyPage key="review" review />} />
                 <Route path="/statistics" element={<StatisticPage />} />
                 <Route path="/account" element={<AccountPage />} />
                 <Route path="/404" element={<NotFoundPage />} />
@@ -243,7 +265,8 @@ export default function App() {
         </Layout.Content>
 
         <Layout.Footer className="app-footer">
-          EnglishWord · 课程项目 · 数据保存在本地 SQLite
+          <span>EnglishWord</span>
+          <span>每天记住一点，让进步看得见。</span>
         </Layout.Footer>
       </Layout>
     </Layout>

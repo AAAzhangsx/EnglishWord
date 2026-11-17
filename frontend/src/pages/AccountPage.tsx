@@ -27,7 +27,8 @@ export default function AccountPage() {
   const navigate = useNavigate();
   const { message } = AntApp.useApp();
   const queryClient = useQueryClient();
-  const { data: user, isPending: userPending } = useCurrentUser();
+  const auth = useCurrentUser();
+  const { data: user, isPending: userPending } = auth;
 
   const checkins = useQuery({
     queryKey: ['checkins'],
@@ -85,6 +86,13 @@ export default function AccountPage() {
         <Card>
           <Skeleton active avatar paragraph={{ rows: 3 }} />
         </Card>
+      ) : auth.isError ? (
+        <ErrorState
+          title="账号状态加载失败"
+          error={auth.error}
+          onRetry={() => void auth.refetch()}
+          retrying={auth.isFetching}
+        />
       ) : !user ? (
         <AuthGate
           title="登录后使用账号与打卡"
@@ -126,7 +134,9 @@ export default function AccountPage() {
                   </Space>
                 }
                 extra={
-                  checkedInToday ? (
+                  checkins.isPending || checkins.isError ? (
+                    <Tag bordered={false}>状态待确认</Tag>
+                  ) : checkedInToday ? (
                     <Tag bordered={false} color="green" icon={<CheckCircleFilled />}>
                       今日已打卡
                     </Tag>
@@ -158,6 +168,8 @@ export default function AccountPage() {
                       retrying={checkins.isFetching}
                     />
                   )
+                ) : checkins.isPending ? (
+                  <Skeleton active paragraph={{ rows: 2 }} />
                 ) : (
                   <>
                     <div className="metric-row metric-row--tight">
@@ -192,6 +204,10 @@ export default function AccountPage() {
           <Card className="surface-card" title="最近打卡">
             {checkins.isPending ? (
               <Skeleton active paragraph={{ rows: 2 }} />
+            ) : checkins.isError ? (
+              <Typography.Text type="secondary">
+                记录暂时不可用，请在每日打卡卡片中重新加载。
+              </Typography.Text>
             ) : dates.length === 0 ? (
               <Empty description="还没有打卡记录，今天就开始吧" />
             ) : (

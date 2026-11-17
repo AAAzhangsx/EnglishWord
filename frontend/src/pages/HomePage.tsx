@@ -18,30 +18,31 @@ import {
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useCurrentUser, useStudyState } from '../lib/queries';
 import { modeLabels, studyProgress } from '../lib/study';
+import { ErrorState } from '../components/PageStates';
 
 const STEPS = [
   {
     index: '01',
-    title: '预览词库',
-    description: '查看英文、词性与多条中文释义，也能自己维护词库。',
+    title: '遇见新的单词',
+    description: '从示例词库开始，或整理一本属于自己的词库。',
     to: '/wordbooks',
     action: '浏览词库',
   },
   {
     index: '02',
-    title: '即时反馈',
-    description: '首次答对加 10 分，答错扣 10 分；当场重试不重复计分。',
+    title: '找到记忆的节奏',
+    description: '选择、拼写、中文释义，用适合自己的方式记住它。',
     to: '/study',
     action: '开始背诵',
   },
   {
     index: '03',
-    title: '错题重背',
-    description: '完成一轮后，把本轮答错的单词单独再练一遍。',
+    title: '让记忆更牢固',
+    description: '把本轮错词再练一遍，让不熟悉的单词慢慢变熟。',
     to: '/review',
     action: '查看错题',
   },
@@ -49,10 +50,12 @@ const STEPS = [
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { data: user } = useCurrentUser();
+  const auth = useCurrentUser();
+  const user = auth.data;
   const health = useQuery({ queryKey: ['health'], queryFn: api.health });
   const books = useQuery({ queryKey: ['wordbooks'], queryFn: api.wordbooks });
-  const { state, isPending: studyPending } = useStudyState();
+  const study = useStudyState();
+  const { state, isPending: studyPending } = study;
 
   const bookCount = books.data?.items.length ?? 0;
   const wordCount = books.data?.items.reduce((sum, book) => sum + book.wordCount, 0) ?? 0;
@@ -61,15 +64,30 @@ export default function HomePage() {
 
   return (
     <div className="page-stack">
-      <section className="hero">
-        <span className="hero-watermark" aria-hidden="true">
-          Aa
+      <div className="overview-heading">
+        <div>
+          <span className="section-eyebrow">YOUR LEARNING, EVERY DAY</span>
+          <Typography.Title level={2}>学习概览</Typography.Title>
+        </div>
+        <span className="overview-date">
+          {new Intl.DateTimeFormat('zh-CN', {
+            timeZone: 'Asia/Shanghai',
+            month: 'long',
+            day: 'numeric',
+            weekday: 'long',
+          }).format(new Date())}
         </span>
+      </div>
+      <section className="hero">
         <div className="hero-content">
           <Tag bordered={false} color="green" className="hero-tag">
             {user ? `欢迎回来，${user.username}` : '让学习，成为每天的小习惯'}
           </Tag>
-          <Typography.Title level={1}>从今天的第一个单词开始。</Typography.Title>
+          <Typography.Title level={1}>
+            从今天的
+            <br />
+            <span>第一个单词</span>开始。
+          </Typography.Title>
           <Typography.Paragraph className="hero-lead">
             选一本词库，试试选择题或拼写。每一次认真作答，都是一点进步。
           </Typography.Paragraph>
@@ -90,8 +108,28 @@ export default function HomePage() {
           <Typography.Text className="hero-note">
             {user
               ? '成绩、错题与打卡会保存在你的账号中。'
-              : '访客模式下的本轮进度只保留一小时，登录后可长期保存。'}
+              : '正在以访客身份体验，登录后可保存学习记录。'}
           </Typography.Text>
+        </div>
+        <div className="hero-art" aria-hidden="true">
+          <div className="word-paper word-paper--back" />
+          <div className="word-paper">
+            <span className="paper-eyebrow">TODAY IS A GOOD DAY TO LEARN</span>
+            <span className="paper-word">
+              progress<span className="paper-dot">.</span>
+            </span>
+            <span className="paper-pronunciation">
+              /ˈprəʊɡres/ <span>n.</span>
+            </span>
+            <span className="paper-meaning">进步；进展</span>
+            <div className="paper-rule" />
+            <span className="paper-example">A little progress, every day.</span>
+            <span className="paper-translation">每天一点点，离目标更近一点。</span>
+            <span className="paper-stamp">
+              <BookOutlined /> 每天记住一点
+            </span>
+          </div>
+          <span className="hero-art-caption">Small steps. Lasting memories.</span>
         </div>
       </section>
 
@@ -99,8 +137,8 @@ export default function HomePage() {
         <Alert
           type="error"
           showIcon
-          title="后端服务暂时连不上"
-          description="请确认 C++ 服务已启动、8080 端口可用，然后重新加载。"
+          title="暂时无法获取学习数据"
+          description="请检查网络连接，稍后重新加载。"
           action={
             <Button
               size="small"
@@ -108,6 +146,8 @@ export default function HomePage() {
               onClick={() => {
                 void health.refetch();
                 void books.refetch();
+                void study.refetch();
+                void auth.refetch();
               }}
             >
               重新加载
@@ -116,17 +156,20 @@ export default function HomePage() {
         />
       ) : null}
 
-      {!user && !studyPending ? (
-        <Alert
-          type="info"
-          showIcon
-          title="当前是访客模式"
-          description="作答记录只保存在浏览器会话中，最长一小时；登录后成绩、错题与打卡都会保存到账号。"
-          action={
-            <Button size="small" type="primary" onClick={() => navigate('/login')}>
-              登录 / 注册
-            </Button>
-          }
+      {auth.isError && !connectionError ? (
+        <ErrorState
+          title="账号状态加载失败"
+          error={auth.error}
+          onRetry={() => void auth.refetch()}
+          retrying={auth.isFetching}
+        />
+      ) : null}
+      {study.isError && !study.noSession && !connectionError ? (
+        <ErrorState
+          title="本轮进度加载失败"
+          error={study.error}
+          onRetry={() => void study.refetch()}
+          retrying={study.isFetching}
         />
       ) : null}
 
@@ -172,7 +215,7 @@ export default function HomePage() {
         </Card>
       ) : null}
 
-      <Row gutter={[20, 20]}>
+      <Row gutter={[16, 16]}>
         <Col xs={24} md={8}>
           <Card className="metric-card" loading={books.isPending}>
             <div className="metric-card-head">
@@ -181,7 +224,7 @@ export default function HomePage() {
               </span>
               <Typography.Text type="secondary">可用词库</Typography.Text>
             </div>
-            <Statistic value={bookCount} suffix="本" />
+            <Statistic value={books.isError && !books.data ? '—' : bookCount} suffix="本" />
             <Typography.Text type="secondary" className="metric-hint">
               含公共示例与你的私人词库
             </Typography.Text>
@@ -195,7 +238,7 @@ export default function HomePage() {
               </span>
               <Typography.Text type="secondary">可学词汇</Typography.Text>
             </div>
-            <Statistic value={wordCount} suffix="词" />
+            <Statistic value={books.isError && !books.data ? '—' : wordCount} suffix="词" />
             <Typography.Text type="secondary" className="metric-hint">
               进入任一词库即可查看全部单词
             </Typography.Text>
@@ -217,23 +260,29 @@ export default function HomePage() {
         </Col>
       </Row>
 
-      <Card className="surface-card" title="怎么用">
-        <Row gutter={[24, 20]}>
+      <section className="learning-path" aria-labelledby="learning-path-title">
+        <div className="section-heading">
+          <Typography.Title level={3} id="learning-path-title">
+            每一步，都算数
+          </Typography.Title>
+          <Typography.Text type="secondary">从认识，到记住，再到熟悉。</Typography.Text>
+        </div>
+        <Row gutter={[16, 16]}>
           {STEPS.map((step) => (
             <Col xs={24} md={8} key={step.index}>
-              <div className="step-item">
+              <Link to={step.to} className="step-item">
                 <span className="step-index">{step.index}</span>
                 <Typography.Title level={4}>{step.title}</Typography.Title>
                 <Typography.Paragraph type="secondary">{step.description}</Typography.Paragraph>
-                <Button type="link" className="step-link" onClick={() => navigate(step.to)}>
+                <span className="step-link">
                   {step.action}
                   <ArrowRightOutlined />
-                </Button>
-              </div>
+                </span>
+              </Link>
             </Col>
           ))}
         </Row>
-      </Card>
+      </section>
     </div>
   );
 }

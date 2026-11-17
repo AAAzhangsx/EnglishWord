@@ -16,13 +16,20 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api, type StudyHistoryEntry } from '../lib/api';
 import { useCurrentUser, useStudyState } from '../lib/queries';
-import { formatDateTime, modeLabels, percentage, studyProgress } from '../lib/study';
+import {
+  formatDateTime,
+  modeLabels,
+  percentage,
+  questionNumber,
+  studyProgress,
+} from '../lib/study';
 import PageHeader from '../components/PageHeader';
 import { AuthGate, ErrorState } from '../components/PageStates';
 
 export default function StatisticPage() {
   const navigate = useNavigate();
-  const { data: user, isPending: userPending } = useCurrentUser();
+  const auth = useCurrentUser();
+  const { data: user, isPending: userPending } = auth;
   const study = useStudyState();
   const state = study.state;
 
@@ -152,10 +159,13 @@ export default function StatisticPage() {
             />
             <Space wrap size={12}>
               <Typography.Text type="secondary">
-                {modeLabels[state.mode]} · 第 {state.currentIndex + 1} / {state.totalCount} 题
+                {modeLabels[state.mode]} ·{' '}
+                {state.finished
+                  ? `已完成 ${state.totalCount} 题`
+                  : `第 ${questionNumber(state)} / ${state.totalCount} 题`}
               </Typography.Text>
               <Button size="small" type="primary" onClick={() => navigate('/study')}>
-                {state.finished ? '再来一轮' : '继续本轮'}
+                {state.finished ? '查看本轮结果' : '继续本轮'}
               </Button>
             </Space>
           </>
@@ -166,6 +176,13 @@ export default function StatisticPage() {
         <Card>
           <Skeleton active paragraph={{ rows: 2 }} />
         </Card>
+      ) : auth.isError ? (
+        <ErrorState
+          title="账号状态加载失败"
+          error={auth.error}
+          onRetry={() => void auth.refetch()}
+          retrying={auth.isFetching}
+        />
       ) : !user ? (
         <AuthGate
           title="登录后查看累计统计"

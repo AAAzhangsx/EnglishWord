@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { InputRef } from 'antd';
 import {
   Alert,
   App as AntApp,
@@ -53,6 +54,8 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
   const [selectedBook, setSelectedBook] = useState<number>();
   const [mode, setMode] = useState<StudyMode>('spelling');
   const [setupOpen, setSetupOpen] = useState(false);
+  const inputRef = useRef<InputRef>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
 
   const books = useQuery({ queryKey: ['wordbooks'], queryFn: api.wordbooks });
   const study = useStudyState();
@@ -65,17 +68,43 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
 
   const mutation = useMutation({
     mutationFn: (action: () => Promise<StudyState>) => action(),
+    onMutate: () => client.cancelQueries({ queryKey: ['study'] }),
     onSuccess: (data) => {
       client.setQueryData(['study'], data);
       if (!data.result) {
         // 进入下一题或新一轮时清空输入；保留答案是为了让用户看到自己刚选/刚写的答案。
         setAnswer('');
       }
+      void client.invalidateQueries({ queryKey: ['statistics'] });
+      void client.invalidateQueries({ queryKey: ['history'] });
     },
-    onError: (error: Error) => message.error(error.message),
+    onError: (error: Error) => {
+      if (error instanceof ApiError && error.status === 404) {
+        void client.resetQueries({ queryKey: ['study'] });
+        setAnswer('');
+      }
+      message.error(error.message);
+    },
   });
   const pending = mutation.isPending;
-  const studyError = study.error instanceof ApiError && !study.noSession ? study.error : null;
+  const studyError = study.error && !study.noSession ? study.error : null;
+
+  useEffect(() => {
+    if (pending || review || !state || state.finished) return;
+    if (state.canAdvance) nextRef.current?.focus({ preventScroll: true });
+    else inputRef.current?.focus({ preventScroll: true });
+  }, [
+    pending,
+    review,
+    state?.currentIndex,
+    state?.question?.wordId,
+    state?.canAdvance,
+    state?.finished,
+  ]);
+
+  useEffect(() => {
+    if (urlBookId && state?.finished && urlBookId !== state.wordbookId) setSetupOpen(true);
+  }, [urlBookId, state?.finished, state?.wordbookId]);
 
   const canAnswer = state !== undefined && !state.finished && !state.canAdvance && !pending;
   const isLastQuestion = state !== undefined && state.currentIndex + 1 >= state.totalCount;
@@ -90,13 +119,12 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
     mutation.mutate(() => api.answer(trimmed));
   }
 
-  function startRound(book: number | undefined) {
+  function startRound(book: number | undefined, nextMode: StudyMode = mode) {
     if (book === undefined) {
       message.warning('请先选择词库');
       return;
     }
-    setSetupOpen(false);
-    mutation.mutate(() => api.start(book, mode));
+    mutation.mutate(() => api.start(book, nextMode), { onSuccess: () => setSetupOpen(false) });
   }
 
   function startReview() {
@@ -199,7 +227,14 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
     );
   }
 
-  const showSetup = !state || (state.finished && setupOpen);
+  const showSetup = !study.isPending && !studyError && (!state || (state.finished && setupOpen));
+  const selectedBookData = books.data?.items.find((book) => book.id === bookId);
+  const selectionError =
+    selectedBookData?.wordCount === 0
+      ? '这本词库还没有单词，请先添加或导入单词。'
+      : mode === 'choice' && selectedBookData && selectedBookData.wordCount < 2
+        ? '选择题至少需要两个不同的单词，请切换模式或补充词库。'
+        : undefined;
 
   return (
     <div className="page-stack">
@@ -223,6 +258,15 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
         />
       ) : null}
 
+      {state && !state.finished && urlBookId && urlBookId !== state.wordbookId ? (
+        <Alert
+          type="info"
+          showIcon
+          title="当前还有一轮背诵正在进行"
+          description="先完成当前这一轮，再选择新的词库开始练习。"
+        />
+      ) : null}
+
       {showSetup ? (
         <Card className="setup-card" title={state?.finished ? '换一组继续' : '选择词库与方式'}>
           {books.isSuccess && books.data.items.length === 0 ? (
@@ -241,6 +285,7 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
                       value={bookId}
                       loading={books.isPending}
                       placeholder={books.isPending ? '正在加载词库' : '请选择词库'}
+                      disabled={pending || books.isError}
                       onChange={setSelectedBook}
                       options={books.data?.items.map((book) => ({
                         value: book.id,
@@ -255,6 +300,7 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
                       block
                       vertical={compactMode}
                       value={mode}
+                      disabled={pending}
                       onChange={(next) => setMode(next as StudyMode)}
                       options={MODE_OPTIONS}
                     />
@@ -264,13 +310,30 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
               <Typography.Paragraph type="secondary" className="setup-hint">
                 {modeHints[mode]}
               </Typography.Paragraph>
+              {selectionError ? (
+                <Alert
+                  className="setup-warning"
+                  type="warning"
+                  showIcon
+                  title={selectionError}
+                  action={
+                    selectedBookData?.wordCount === 0 ? (
+                      <Button size="small" onClick={() => navigate('/wordbooks')}>
+                        管理词库
+                      </Button>
+                    ) : undefined
+                  }
+                />
+              ) : null}
               <Space wrap>
                 <Button
                   type="primary"
                   size="large"
                   htmlType="submit"
                   loading={pending}
-                  disabled={bookId === undefined}
+                  disabled={
+                    !selectedBookData || Boolean(selectionError) || books.isError || books.isPending
+                  }
                 >
                   开始背诵
                 </Button>
@@ -325,7 +388,7 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
             ) : null}
             <Button
               loading={pending}
-              onClick={() => startRound(activeBookId)}
+              onClick={() => startRound(activeBookId, state.mode)}
               type={state.wrongCount > 0 ? 'default' : 'primary'}
             >
               再来一轮
@@ -380,7 +443,10 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
             ) : null}
           </div>
 
-          <Form onFinish={() => submitAnswer(answer)} className="study-form">
+          <Form
+            onFinish={() => (state.canAdvance ? mutation.mutate(api.next) : submitAnswer(answer))}
+            className="study-form"
+          >
             <Form.Item>
               {state.mode === 'choice' ? (
                 <Radio.Group
@@ -392,19 +458,38 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
                   }}
                   disabled={pending || state.canAdvance}
                   className="choice-options"
-                  options={state.question?.choices.map((option) => ({
-                    label: option,
+                  aria-label="英文选项"
+                  options={state.question?.choices.map((option, index) => ({
+                    label: (
+                      <span className="choice-label">
+                        <span className="choice-letter">{String.fromCharCode(65 + index)}</span>
+                        <span>{option}</span>
+                      </span>
+                    ),
                     value: option,
+                    className:
+                      answer === option && state.result
+                        ? state.result.correct
+                          ? 'choice-correct'
+                          : 'choice-incorrect'
+                        : undefined,
                   }))}
                 />
               ) : (
                 <Input
+                  ref={inputRef}
                   aria-label={state.mode === 'meaning' ? '中文答案' : '英文答案'}
                   size="large"
                   placeholder={state.mode === 'meaning' ? '输入中文释义' : '输入英文单词'}
                   autoComplete="off"
-                  autoFocus
                   spellCheck={false}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  maxLength={500}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && event.nativeEvent.isComposing)
+                      event.preventDefault();
+                  }}
                   value={answer}
                   onChange={(event) => setAnswer(event.target.value)}
                   disabled={pending || state.canAdvance}
@@ -415,6 +500,8 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
             {state.result ? (
               <Alert
                 className="answer-feedback"
+                role="status"
+                aria-live="polite"
                 showIcon
                 type={state.result.correct ? 'success' : 'warning'}
                 title={state.result.message}
@@ -432,6 +519,7 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
             <div className="study-actions">
               {state.canAdvance ? (
                 <Button
+                  ref={nextRef}
                   type="primary"
                   size="large"
                   icon={isLastQuestion ? <CheckCircleFilled /> : <ArrowRightOutlined />}
@@ -465,8 +553,7 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
       ) : null}
 
       <Typography.Text type="secondary" className="page-footnote">
-        访客的学习轮次通过 Cookie
-        暂存，最长闲置一小时，重启后端会清空；登录后成绩、错题与打卡会写入数据库。
+        首次答对 +10 分，答错 −10 分；重试不重复计分。登录后自动保存成绩与错词。
       </Typography.Text>
     </div>
   );

@@ -94,9 +94,9 @@ export interface CheckinResult {
 }
 
 export interface ImportResult {
-  imported: number;
-  merged: number;
-  skipped: number;
+  importedCount: number;
+  mergedCount: number;
+  skippedCount: number;
 }
 
 export class ApiError extends Error {
@@ -118,12 +118,23 @@ async function request<T>(
   data?: unknown,
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE' = data === undefined ? 'GET' : 'POST',
 ): Promise<T> {
-  const response = await fetch(`/api${path}`, {
-    method,
-    credentials: 'same-origin',
-    headers: method === 'GET' ? undefined : { 'Content-Type': 'application/json' },
-    body: data === undefined ? undefined : JSON.stringify(data),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`/api${path}`, {
+      method,
+      credentials: 'same-origin',
+      headers: method === 'GET' ? undefined : { 'Content-Type': 'application/json' },
+      body: data === undefined ? undefined : JSON.stringify(data),
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (error) {
+    throw new ApiError(
+      error instanceof DOMException && error.name === 'TimeoutError'
+        ? '请求超时，请检查网络后重试。'
+        : '暂时无法连接服务，请检查网络后重试。',
+      0,
+    );
+  }
   const raw = await response.text();
   let result: unknown = null;
   if (raw) {
@@ -134,8 +145,18 @@ async function request<T>(
     }
   }
   if (!response.ok) {
-    const message = (result as { error?: string } | null)?.error ?? `请求失败：${response.status}`;
-    throw new ApiError(message, response.status);
+    const details = result as {
+      error?: string;
+      errors?: { line: number; message: string }[];
+    } | null;
+    const message =
+      details?.error ??
+      (response.status >= 500 ? '服务暂时不可用，请稍后重试。' : `请求失败：${response.status}`);
+    const lines = details?.errors
+      ?.slice(0, 3)
+      .map((item) => `第 ${item.line} 行：${item.message}`)
+      .join('；');
+    throw new ApiError(lines ? `${message}：${lines}` : message, response.status);
   }
   return result as T;
 }

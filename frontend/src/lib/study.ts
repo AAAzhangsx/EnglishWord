@@ -25,14 +25,18 @@ export function percentage(part: number, total: number): number {
 }
 
 /**
- * 学习进度：把“当前正在作答的题目”也算进进度，避免第一题显示 0%。
- * 答对之后当前题视为已完成，最后一题答完即 100%。
+ * 以已完成题目计算学习进度；当前题答对后计入，整轮完成时为 100%。
  */
 export function studyProgress(
   state: Pick<StudyState, 'currentIndex' | 'totalCount' | 'canAdvance' | 'finished'>,
 ): number {
   if (state.finished) return 100;
   return percentage(state.currentIndex + (state.canAdvance ? 1 : 0), state.totalCount);
+}
+
+/** 完成一轮后后端的 currentIndex 等于总数，显示题号时需要截断。 */
+export function questionNumber(state: Pick<StudyState, 'currentIndex' | 'totalCount'>): number {
+  return Math.min(state.currentIndex + 1, state.totalCount);
 }
 
 /** 把后端返回的 UTC 时间格式化为上海时区的“MM-DD HH:mm”。 */
