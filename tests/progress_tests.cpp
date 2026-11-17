@@ -17,6 +17,12 @@
 #include <string>
 #include <vector>
 
+// Windows 头文件（经 Drogon 引入的 minwindef.h）把 near 定义成空宏，
+// 不解除会导致下面的 near() 函数签名无法解析。
+#ifdef near
+#undef near
+#endif
+
 namespace {
 
 using namespace englishword;
