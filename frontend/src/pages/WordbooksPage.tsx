@@ -1,161 +1,551 @@
-import { useState } from 'react';
-import { Alert, Button, Card, Select, Space, Table, Tag, Typography, Input } from 'antd';
-import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import {
+  Alert,
+  App as AntApp,
+  Button,
+  Card,
+  Col,
+  Empty,
+  Form,
+  Grid,
+  Input,
+  Modal,
+  Popconfirm,
+  Radio,
+  Row,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Typography,
+} from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import {
+  DeleteOutlined,
+  DownloadOutlined,
+  LoginOutlined,
+  PlusOutlined,
+  ReadOutlined,
+  SearchOutlined,
+  UploadOutlined,
+} from '@ant-design/icons';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { api, type Word } from '../lib/api';
+import { useCurrentUser } from '../lib/queries';
+import PageHeader from '../components/PageHeader';
+import { ErrorState } from '../components/PageStates';
+
+interface CreateBookValues {
+  name: string;
+}
+
+interface AddWordValues {
+  english: string;
+  partOfSpeech: string;
+  meanings: string;
+}
+
+interface ImportValues {
+  content: string;
+  duplicatePolicy: 'merge' | 'skip';
+}
+
+/** 把字符串内容作为 TSV 文件下载到本地（带 BOM，Excel 打开不乱码）。 */
+function downloadTsv(content: string, filename: string) {
+  const blob = new Blob(['\uFEFF', content], {
+    type: 'text/tab-separated-values;charset=utf-8',
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 export default function WordbooksPage() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { message } = AntApp.useApp();
+  const screens = Grid.useBreakpoint();
+  const compact = screens.md === false;
+  const { data: user } = useCurrentUser();
+
   const [selected, setSelected] = useState<number>();
+  const [keyword, setKeyword] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [addWordOpen, setAddWordOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+
+  const [createForm] = Form.useForm<CreateBookValues>();
+  const [addWordForm] = Form.useForm<AddWordValues>();
+  const [importForm] = Form.useForm<ImportValues>();
+
   const books = useQuery({ queryKey: ['wordbooks'], queryFn: api.wordbooks });
   const bookId = selected ?? books.data?.items[0]?.id;
+  const currentBook = books.data?.items.find((book) => book.id === bookId);
   const words = useQuery({
     queryKey: ['words', bookId],
     queryFn: () => api.words(bookId!),
     enabled: bookId !== undefined,
   });
-  const [keyword, setKeyword] = useState('');
-  const query = keyword.trim().toLowerCase();
-  const filteredWords = (words.data?.items ?? []).filter(
-    (word) => 
-    {
-      const matchesEnglish = word.english.toLowerCase().includes(query);
-      const matchesChinese = word.meanings.some((meaning) =>
-        meaning.includes(query)
-      );
 
-      return matchesEnglish || matchesChinese
-    }
-  )
-  const canStart = (bookId !== undefined && words.isSuccess && words.data.items.length > 0)
-  /**
- * 将字符串内容作为 TSV 文件下载到本地
- * @param content 要写入 TSV 文件的字符串内容（通常为多行、制表符分隔的文本）
- */
-function downloadTsv(content: string) {
-  // 1. 创建 Blob：把字符串内容包装成二进制大对象
-  //    - '\uFEFF' 是 UTF-8 BOM（字节序标记），放在内容最前面
-  //      作用是让 Excel 等软件识别出"这是 UTF-8 编码"，避免打开时中文乱码
-  //    - type 指定 MIME 类型为 TSV，并声明字符集为 utf-8
-  const blob = new Blob(['\uFEFF', content], {
-    type: 'text/tab-separated-values;charset=utf-8',
+  const query = keyword.trim().toLowerCase();
+  const allWords = words.data?.items ?? [];
+  const filteredWords = useMemo(() => {
+    if (!query) return allWords;
+    return allWords.filter(
+      (word) =>
+        word.english.toLowerCase().includes(query) ||
+        word.meanings.some((meaning) => meaning.toLowerCase().includes(query)),
+    );
+  }, [allWords, query]);
+
+  const canEdit = Boolean(user) && Boolean(currentBook) && !currentBook?.isDemo;
+  const canStart = bookId !== undefined && allWords.length > 0;
+
+  const createBook = useMutation({
+    mutationFn: (name: string) => api.createWordBook(name),
+    onSuccess: (book) => {
+      setCreateOpen(false);
+      setSelected(book.id);
+      message.success(`已创建词库「${book.name}」`);
+      void queryClient.invalidateQueries({ queryKey: ['wordbooks'] });
+    },
+    onError: (error: Error) => message.error(error.message),
   });
 
-  // 2. 为 Blob 生成一个临时的、当前页面内有效的 URL（形如 blob:https://xxx/uuid）
-  const url = URL.createObjectURL(blob);
+  const addWord = useMutation({
+    mutationFn: (word: Omit<Word, 'id'>) => api.addWord(bookId!, word),
+    onSuccess: (word) => {
+      setAddWordOpen(false);
+      message.success(`已添加 ${word.english}`);
+      void queryClient.invalidateQueries({ queryKey: ['words', bookId] });
+      void queryClient.invalidateQueries({ queryKey: ['wordbooks'] });
+    },
+    onError: (error: Error) => message.error(error.message),
+  });
 
-  // 3. 创建一个隐藏的 <a> 标签，用来模拟用户点击下载
-  const link = document.createElement('a');
-  link.href = url;                 // 指向上面生成的 Blob URL
-  link.download = 'wordbook.tsv';  // 指定下载后的文件名（浏览器会以此名保存）
+  const deleteWord = useMutation({
+    mutationFn: (word: Word) => api.deleteWord(word.id),
+    onSuccess: (_result, word) => {
+      message.success(`已删除 ${word.english}`);
+      void queryClient.invalidateQueries({ queryKey: ['words', bookId] });
+      void queryClient.invalidateQueries({ queryKey: ['wordbooks'] });
+    },
+    onError: (error: Error) => message.error(error.message),
+  });
 
-  // 4. 将 <a> 插入 DOM
-  //    Firefox 等浏览器要求元素必须在文档中，click() 才能触发下载
-  document.body.appendChild(link);
-
-  // 5. 以编程方式触发点击，等价于用户点击了这个链接，开始下载
-  link.click();
-
-  // 6. 下载触发后，把 <a> 从 DOM 中移除，避免残留无用节点
-  link.remove();
-
-  // 7. 释放之前创建的 Blob URL，回收内存（否则该 URL 会一直占用内存直到页面关闭）
-  URL.revokeObjectURL(url);
-}
+  const importWords = useMutation({
+    mutationFn: (values: ImportValues) =>
+      api.importTsv(bookId!, values.content, values.duplicatePolicy),
+    onSuccess: (result) => {
+      setImportOpen(false);
+      message.success(
+        `导入完成：新增 ${result.imported} 条，补全 ${result.merged} 条，跳过 ${result.skipped} 条`,
+      );
+      void queryClient.invalidateQueries({ queryKey: ['words', bookId] });
+      void queryClient.invalidateQueries({ queryKey: ['wordbooks'] });
+    },
+    onError: (error: Error) => message.error(error.message),
+  });
 
   function handleExport() {
-    const rows = filteredWords.flatMap((word) =>
-      word.meanings.map((meaning) =>
-        [word.english, word.partOfSpeech, meaning].join('\t'),
-      ),
-    );
+    const rows = filteredWords.flatMap((word) => {
+      const meanings = word.meanings.length > 0 ? word.meanings : [''];
+      return meanings.map((meaning) => [word.english, word.partOfSpeech, meaning].join('\t'));
+    });
     const content = ['english\tpos\tmeaning', ...rows].join('\n');
-
-    downloadTsv(content);
+    const safeName = (currentBook?.name ?? 'wordbook').replace(/[\\/:*?"<>|\s]+/g, '-');
+    downloadTsv(content, `${safeName}.tsv`);
   }
+
+  const columns: ColumnsType<Word> = [
+    {
+      title: '英文单词',
+      dataIndex: 'english',
+      width: compact ? 148 : 220,
+      render: (value: string, word) => (
+        <div className="word-cell">
+          <span className="word-english">{value}</span>
+          {compact && word.partOfSpeech ? (
+            <Tag bordered={false} className="pos-tag">
+              {word.partOfSpeech}
+            </Tag>
+          ) : null}
+        </div>
+      ),
+    },
+  ];
+
+  if (!compact) {
+    columns.push({
+      title: '词性',
+      dataIndex: 'partOfSpeech',
+      width: 110,
+      render: (value: string) =>
+        value ? (
+          <Tag bordered={false} className="pos-tag">
+            {value}
+          </Tag>
+        ) : (
+          <Typography.Text type="secondary">—</Typography.Text>
+        ),
+    });
+  }
+
+  columns.push({
+    title: '中文释义',
+    dataIndex: 'meanings',
+    render: (values: string[]) => <span className="meaning-text">{values.join('；')}</span>,
+  });
+
+  if (canEdit) {
+    columns.push({
+      title: '操作',
+      key: 'action',
+      width: compact ? 56 : 90,
+      align: 'right',
+      render: (_value, word) => (
+        <Popconfirm
+          title="删除这个单词？"
+          description="删除后该词及全部释义都会移除，且不可恢复。"
+          okText="删除"
+          cancelText="取消"
+          okButtonProps={{ danger: true }}
+          onConfirm={() => deleteWord.mutate(word)}
+        >
+          <Button
+            type="text"
+            size="small"
+            icon={<DeleteOutlined />}
+            className="row-action-danger"
+            loading={deleteWord.isPending && deleteWord.variables?.id === word.id}
+            aria-label={`删除 ${word.english}`}
+          >
+            {compact ? null : '删除'}
+          </Button>
+        </Popconfirm>
+      ),
+    });
+  }
+
   return (
-    <Space orientation="vertical" size={20} className="full-width">
-      <div>
-        <Typography.Title level={2}>我的词库</Typography.Title>
-        <Typography.Text type="secondary">先认识单词，再开始今天的练习。</Typography.Text>
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        title="我的词库"
+        description="先认识单词，再开始今天的练习。示例词库只读，登录后可以创建并维护自己的词库。"
+        extra={
+          <Space wrap>
+            <Button
+              icon={<DownloadOutlined />}
+              onClick={handleExport}
+              disabled={!filteredWords.length}
+              title="导出当前筛选结果（UTF-8 TSV）"
+            >
+              导出 TSV
+            </Button>
+            {user ? (
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+                新建词库
+              </Button>
+            ) : (
+              <Button type="primary" icon={<LoginOutlined />} onClick={() => navigate('/login')}>
+                登录后新建词库
+              </Button>
+            )}
+          </Space>
+        }
+      />
+
+      {books.isError ? (
+        <ErrorState
+          title="词库列表加载失败"
+          error={books.error}
+          onRetry={() => void books.refetch()}
+          retrying={books.isFetching}
+        />
+      ) : null}
+      {words.isError ? (
+        <ErrorState
+          title="单词列表加载失败"
+          error={words.error}
+          onRetry={() => void words.refetch()}
+          retrying={words.isFetching}
+        />
+      ) : null}
+
+      <Card className="surface-card">
+        <div className="table-toolbar">
+          <div className="table-toolbar-left">
+            <Select
+              aria-label="选择词库"
+              className="book-select"
+              value={bookId}
+              loading={books.isPending}
+              placeholder="选择词库"
+              onChange={(value) => {
+                setSelected(value);
+                setKeyword('');
+              }}
+              options={books.data?.items.map((book) => ({
+                value: book.id,
+                label: `${book.name}（${book.wordCount} 词）`,
+              }))}
+            />
+            {currentBook ? (
+              currentBook.isDemo ? (
+                <Tag bordered={false} color="gold">
+                  示例词库 · 只读
+                </Tag>
+              ) : (
+                <Tag bordered={false} color="green">
+                  私人词库
+                </Tag>
+              )
+            ) : null}
+          </div>
+          <div className="table-toolbar-right">
+            <Input
+              aria-label="搜索单词"
+              className="search-input"
+              placeholder="搜索英文或中文释义"
+              allowClear
+              prefix={<SearchOutlined />}
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+            />
+            <Button
+              icon={<UploadOutlined />}
+              disabled={!canEdit}
+              onClick={() => setImportOpen(true)}
+              title={canEdit ? undefined : '仅私人词库支持导入'}
+            >
+              导入 TSV
+            </Button>
+            <Button
+              icon={<PlusOutlined />}
+              disabled={!canEdit}
+              onClick={() => setAddWordOpen(true)}
+              title={canEdit ? undefined : '仅私人词库支持添加单词'}
+            >
+              添加单词
+            </Button>
+            <Button
+              type="primary"
+              icon={<ReadOutlined />}
+              disabled={!canStart}
+              onClick={() => navigate(`/study?wordbookId=${bookId}`)}
+            >
+              开始背诵
+            </Button>
+          </div>
+        </div>
+
+        <div className="table-summary">
+          <Typography.Text type="secondary">
+            共 {allWords.length} 个单词
+            {query ? `，匹配 ${filteredWords.length} 个` : ''}
+          </Typography.Text>
+          {currentBook?.isDemo ? (
+            <Typography.Text type="secondary">
+              示例词库为公共只读数据，登录后可导入自己的词库。
+            </Typography.Text>
+          ) : null}
+        </div>
+
+        <Table<Word>
+          rowKey="id"
+          size={compact ? 'small' : 'middle'}
+          loading={books.isPending || words.isPending}
+          dataSource={filteredWords}
+          columns={columns}
+          pagination={{
+            pageSize: compact ? 8 : 10,
+            hideOnSinglePage: true,
+            showSizeChanger: false,
+            size: compact ? 'small' : undefined,
+          }}
+          scroll={compact ? undefined : { x: 600 }}
+          locale={{
+            emptyText: query ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={`没有匹配「${keyword.trim()}」的单词`}
+              >
+                <Button onClick={() => setKeyword('')}>清除搜索</Button>
+              </Empty>
+            ) : (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={canEdit ? '这本词库还没有单词' : '暂时没有单词'}
+              >
+                {canEdit ? (
+                  <Space>
+                    <Button type="primary" onClick={() => setAddWordOpen(true)}>
+                      添加单词
+                    </Button>
+                    <Button onClick={() => setImportOpen(true)}>导入 TSV</Button>
+                  </Space>
+                ) : null}
+              </Empty>
+            ),
+          }}
+        />
+      </Card>
+
       <Alert
         type="info"
         showIcon
-        title="当前展示公共示例词库"
-        description="私人词库、文件导入、增删改和补充释义的开发任务见 docs/PLAN.md。"
+        title="可以做什么"
+        description="新建词库后，可以逐个添加单词、粘贴 UTF-8 TSV 批量导入，并随时删除不再需要的词；示例词库保持只读，避免影响其他人的练习。"
       />
-      {(books.isError || words.isError) && (
-        <Alert
-          type="error"
-          showIcon
-          title="词库加载失败"
-          description={(books.error ?? words.error)?.message}
-        />
-      )}
-      <Card>
-        <Space wrap className="toolbar">
-          <Select
-            aria-label="选择词库"
-            style={{ minWidth: 220 }}
-            value={bookId}
-            loading={books.isPending}
-            onChange={(value) => {
-              setSelected(value);
-              setKeyword('');
-            }}
-            options={books.data?.items.map((book) => ({
-              value: book.id,
-              label: `${book.name}（${book.wordCount} 词）`,
-            }))}
-          />
-          <Button onClick={handleExport}>导出当前结果</Button>
-          {canStart ?(
-            <Link to={`/study?wordbookId=${bookId}`}>
-              <Button type='primary'>开始背诵</Button>
-            </Link>
-          ) : (
-            <Button type='primary' disabled>
-              开始背诵
-            </Button>
-          )}
-          <Tag>只读示例</Tag>
 
-        </Space>
-        <Input 
-          aria-label = "搜索单词"
-          placeholder='搜索英文或中文释义'
-          allowClear
-          value={keyword}
-          onChange={(event) => setKeyword(event.target.value)}
-          style={{ marginBottom:16 }}
+      <Modal
+        title="新建词库"
+        open={createOpen}
+        onCancel={() => setCreateOpen(false)}
+        onOk={() => createForm.submit()}
+        okText="创建"
+        cancelText="取消"
+        confirmLoading={createBook.isPending}
+        destroyOnHidden
+      >
+        <Form<CreateBookValues>
+          form={createForm}
+          layout="vertical"
+          preserve={false}
+          onFinish={(values) => createBook.mutate(values.name.trim())}
+        >
+          <Form.Item
+            label="词库名称"
+            name="name"
+            rules={[
+              { required: true, whitespace: true, message: '请输入词库名称' },
+              { max: 40, message: '名称不超过 40 个字符' },
+            ]}
+          >
+            <Input placeholder="例如：四级核心词" maxLength={40} showCount autoFocus />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={`添加单词${currentBook ? `：${currentBook.name}` : ''}`}
+        open={addWordOpen}
+        onCancel={() => setAddWordOpen(false)}
+        onOk={() => addWordForm.submit()}
+        okText="添加"
+        cancelText="取消"
+        confirmLoading={addWord.isPending}
+        destroyOnHidden
+      >
+        <Form<AddWordValues>
+          form={addWordForm}
+          layout="vertical"
+          preserve={false}
+          onFinish={(values) => {
+            const meanings = values.meanings
+              .split('\n')
+              .map((line) => line.trim())
+              .filter(Boolean);
+            addWord.mutate({
+              english: values.english.trim(),
+              partOfSpeech: values.partOfSpeech.trim(),
+              meanings,
+            });
+          }}
+        >
+          <Row gutter={16}>
+            <Col xs={24} sm={14}>
+              <Form.Item
+                label="英文单词"
+                name="english"
+                rules={[{ required: true, whitespace: true, message: '请输入英文单词' }]}
+              >
+                <Input placeholder="例如：apple" autoFocus autoComplete="off" spellCheck={false} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={10}>
+              <Form.Item
+                label="词性"
+                name="partOfSpeech"
+                rules={[{ required: true, message: '请输入词性' }]}
+              >
+                <Input placeholder="例如：n." autoComplete="off" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item
+            label="中文释义"
+            name="meanings"
+            extra="每行一条释义，支持同一个单词登记多条释义。"
+            rules={[
+              { required: true, message: '请至少填写一条释义' },
+              {
+                validator: (_rule, value: string) =>
+                  value && value.split('\n').some((line) => line.trim())
+                    ? Promise.resolve()
+                    : Promise.reject(new Error('请至少填写一条释义')),
+              },
+            ]}
+          >
+            <Input.TextArea rows={3} placeholder={'例如：苹果\n苹果树'} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={`导入 TSV${currentBook ? `：${currentBook.name}` : ''}`}
+        open={importOpen}
+        onCancel={() => setImportOpen(false)}
+        onOk={() => importForm.submit()}
+        okText="开始导入"
+        cancelText="取消"
+        width={640}
+        confirmLoading={importWords.isPending}
+        destroyOnHidden
+      >
+        <Alert
+          className="modal-hint"
+          type="info"
+          showIcon
+          title="格式：english<Tab>pos<Tab>meaning"
+          description="每行一个释义，可带表头。全部行校验通过才会写入；任一行出错会整批回滚，不会留下半成品。"
         />
-        {words.isSuccess && (
-          <Typography.Paragraph type='secondary'>
-            共 {words.data.items.length} 个单词，
-            匹配 { filteredWords.length} 个
-          </Typography.Paragraph>
-        )}
-        <Table<Word>
-          rowKey="id"
-          loading={words.isFetching}
-          dataSource={filteredWords}
-          pagination={{ pageSize: 10 }}
-          scroll={{ x: 560 }}
-          columns={[
-            {
-              title: '英文单词',
-              dataIndex: 'english',
-              render: (value: string) => <strong className="word-english">{value}</strong>,
-            },
-            { title: '词性', dataIndex: 'partOfSpeech', width: 100 },
-            {
-              title: '中文释义',
-              dataIndex: 'meanings',
-              render: (values: string[]) => values.join('；'),
-            },
-          ]}
-        />
-      </Card>
-    </Space>
+        <Form<ImportValues>
+          form={importForm}
+          layout="vertical"
+          preserve={false}
+          initialValues={{ duplicatePolicy: 'merge' }}
+          onFinish={(values) => importWords.mutate(values)}
+        >
+          <Form.Item
+            label="TSV 内容"
+            name="content"
+            rules={[{ required: true, message: '请粘贴 TSV 内容' }]}
+          >
+            <Input.TextArea
+              className="code-area"
+              rows={9}
+              spellCheck={false}
+              placeholder={'english\tpos\tmeaning\napple\tn.\t苹果\napple\tn.\t苹果树'}
+            />
+          </Form.Item>
+          <Form.Item label="遇到已存在的单词" name="duplicatePolicy">
+            <Radio.Group
+              optionType="button"
+              options={[
+                { label: '补充新释义', value: 'merge' },
+                { label: '跳过已有词', value: 'skip' },
+              ]}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
   );
 }

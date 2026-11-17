@@ -25,12 +25,14 @@ UserRepository::UserRepository(const std::string& path)
     if (!m_client) {
         throw std::runtime_error("Drogon 未启用 SQLite 支持。");
     }
+    m_client->execSqlSync("PRAGMA foreign_keys = ON");
+    m_client->execSqlSync("PRAGMA busy_timeout = 5000");
 }
 
 std::optional<User> UserRepository::findByUsername(const std::string& username) const
 {
     const auto rows = m_client->execSqlSync(
-        "SELECT id, username, password_hash, created_at FROM users WHERE username = ?", username);
+        "SELECT id, username, password_hash, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at FROM users WHERE username = ?", username);
     if (rows.size() == 0) {
         return std::nullopt;
     }
@@ -40,7 +42,7 @@ std::optional<User> UserRepository::findByUsername(const std::string& username) 
 std::optional<User> UserRepository::findById(std::int64_t id) const
 {
     const auto rows = m_client->execSqlSync(
-        "SELECT id, username, password_hash, created_at FROM users WHERE id = ?", id);
+        "SELECT id, username, password_hash, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at FROM users WHERE id = ?", id);
     if (rows.size() == 0) {
         return std::nullopt;
     }
@@ -49,10 +51,9 @@ std::optional<User> UserRepository::findById(std::int64_t id) const
 
 std::int64_t UserRepository::create(const std::string& username, const std::string& passwordHash) const
 {
-    m_client->execSqlSync("INSERT INTO users(username, password_hash) VALUES (?, ?)", username,
-                          passwordHash);
-    const auto rows = m_client->execSqlSync("SELECT last_insert_rowid() AS id");
-    return rows[0]["id"].as<std::int64_t>();
+    const auto inserted = m_client->execSqlSync(
+        "INSERT INTO users(username, password_hash) VALUES (?, ?)", username, passwordHash);
+    return static_cast<std::int64_t>(inserted.insertId());
 }
 
 } // namespace englishword
